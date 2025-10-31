@@ -224,83 +224,198 @@ def coco17_to_ntu25(coco_kps):
     return ntu
 
 
-def video_to_array(model, video_path):
-    PAD = 40
-    FRAMES = 81 # hardcoded or use framecount
+def video_to_array(model, video_path, args):
+    """
+    Processes a video to extract 3D skeleton data in NTU-25 format.
+    
+    1. Runs HRNet to get 2D COCO keypoints.
+    2. Converts 2D COCO -> 2D H36M format.
+    3. Runs PoseTransformerV2 to get 3D H36M-17 keypoints.
+    4. Converts 3D H36M-17 -> 3D NTU-25 keypoints.
+    
+    Args:
+        model: The loaded PoseTransformerV2 model.
+        video_path: String path to the input video file.
+        args: The argparse object from main() containing model parameters 
+              (e.g., args.pad, args.frames).
+              
+    Returns:
+        np.ndarray: Shape (N, 25, 3) representing 3D keypoints for N frames.
+    """
 
-    print(f"2D keypoint extraction: {osp.basename(video_path)}")
-    keypoints, scores = hrnet_pose(video_path, det_dim=416, num_peroson=1, gen_output=True)
-    keypoints, scores, valid_frames = h36m_coco_format(keypoints, scores)
+    # Helper function to convert the 3D H36M-17 pose to NTU-25
+    # This uses the same logic as your coco17_to_ntu25 but for the H36M-17 skeleton
+    def _h36m17_to_ntu25(h36m_kps):
+        """
+        Converts H36M 17 keypoints (shape (17,3)) to NTU 25 keypoints (shape (25,3)).
+        Input (h36m_kps) is (x, y, z).
+        _safe_mean (defined in global scope) works correctly for (x,y,z).
+        """
+        h36m_kps = np.asarray(h36m_kps, dtype=float)
+        if h36m_kps.shape != (17, 3):
+            raise ValueError("h36m_kps must have shape (17,3)")
+        ntu = np.full((25, 3), np.nan, dtype=float)
 
-    print(f"3D keypoint extraction: {osp.basename(video_path)}")
+        # H36M-17 Joint Indices:
+        # 0:Pelvis, 1:R_Hip, 2:R_Knee, 3:R_Ankle, 4:L_Hip, 5:L_Knee, 6:L_Ankle,
+        # 7:Spine, 8:Thorax, 9:Nose, 10:Head, 11:L_Shoulder, 12:L_Elbow,
+        # 13:L_Wrist, 14:R_Shoulder, 15:R_Elbow, 16:R_Wrist
+        def K(idx):
+            return h36m_kps[idx]
+
+        # Compute convenience points
+        left_shoulder = K(11)
+        right_shoulder = K(14)
+        left_hip = K(4)
+        right_hip = K(1)
+        left_wrist = K(13)
+        right_wrist = K(16)
+        
+        # 1. Torso & Head
+        spine_base = K(0)     # Use H36M Pelvis as base of spine
+        neck = _safe_mean([left_shoulder, right_shoulder])
+        middle_spine = _safe_mean([spine_base, neck]) # Approx
+        upper_spine = _safe_mean([middle_spine, neck])  # Approx
+        head = K(10)          # Use H36M Head
+
+        ntu[0]  = spine_base
+        ntu[1]  = middle_spine
+        ntu[2]  = neck
+        ntu[3]  = head
+        ntu[20] = upper_spine
+
+        # 2. Left Arm (proxies for hand)
+        ntu[4]  = left_shoulder
+        ntu[5]  = K(12) # L_Elbow
+        ntu[6]  = left_wrist
+        ntu[7]  = left_wrist  # left hand ~ left wrist
+        ntu[21] = left_wrist  # tip of left hand ~ left wrist
+        ntu[22] = left_wrist  # left thumb ~ left wrist
+
+        # 3. Right Arm (proxies for hand)
+        ntu[8]  = right_shoulder
+        ntu[9]  = K(15) # R_Elbow
+        ntu[10] = right_wrist
+        ntu[11] = right_wrist # right hand ~ right wrist
+        ntu[23] = right_wrist # tip of right hand ~ right wrist
+        ntu[24] = right_wrist # right thumb ~ right wrist
+        
+        # 4. Left Leg (proxies for foot)
+        ntu[12] = left_hip
+        ntu[13] = K(5) # L_Knee
+        ntu[14] = K(6) # L_Ankle
+        ntu[15] = K(6) # left foot ≈ left ankle
+
+        # 5. Right Leg (proxies for foot)
+        ntu[16] = right_hip
+        ntu[17] = K(2) # R_Knee
+        ntu[18] = K(3) # R_Ankle
+        ntu[19] = K(3) # right foot ≈ right ankle
+
+        return ntu
+
+    # === Step 1 & 2: Get 2D H36M-17 Keypoints ===
+    # 1. Get 2D keypoints (COCO 17)
+    # gen_output=False avoids writing debug files, just returns arrays
+    keypoints_coco, scores_coco = hrnet_pose(video_path, det_dim=416, num_peroson=1, gen_output=False)
+
+    # 2. Convert COCO 17 -> H36M 17 (using your provided function)
+    # keypoints_h36m shape: (1, N_frames, 17, 2)
+    # scores_h36m shape: (1, N_frames, 17)
+    keypoints_h36m, scores_h36m, valid_frames = h36m_coco_format(keypoints_coco, scores_coco)
+    
+    # Get keypoints for the first (and only) person
+    # Shape: (N_frames, 17, 2)
+    keypoints_2d = keypoints_h36m[0]
+
+    # === Step 3: Get 3D H36M-17 Keypoints ===
+    # Get video properties
     cap = cv2.VideoCapture(video_path)
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
-    height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
-    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    video_length = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     cap.release()
 
-    coco_skeleton_frames = []
-
-    for i in tqdm(range(frame_count)):
-        img_size = height, width
-
-        ## input frames
-        start = max(0, i - PAD)
-        end =  min(i + PAD, len(keypoints[0])-1)
-
-        input_2D_no = keypoints[0][start:end+1]
+    # Ensure frame counts match. hrnet_pose might drop a frame.
+    # Use the number of detected frames as the source of truth.
+    if video_length != len(keypoints_2d):
+        # print(f"Warning: Video length mismatch. CV2: {video_length}, HRNet: {len(keypoints_2d)}. Using HRNet length.")
+        video_length = len(keypoints_2d)
         
+    pad = args.pad
+    frames_count = args.frames
+    all_3d_poses_h36m = [] # To store (17, 3) poses
+
+    for i in range(video_length):
+        # 1. Get the sliding window of 2D keypoints
+        start = max(0, i - pad)
+        end = min(i + pad, video_length - 1)
+        
+        input_2D_no = keypoints_2d[start:end+1]
+
+        # 2. Pad the window if it's at the edges
         left_pad, right_pad = 0, 0
-        if input_2D_no.shape[0] != FRAMES:
-            if i < PAD:
-                left_pad = PAD - i
-            if i > len(keypoints[0]) - PAD - 1:
-                right_pad = i + PAD - (len(keypoints[0]) - 1)
-
+        if input_2D_no.shape[0] != frames_count:
+            if i < pad:
+                left_pad = pad - i
+            if i > video_length - pad - 1:
+                # Calculate how many frames we're short on the right
+                right_pad = (i + pad) - (video_length - 1)
+            
+            # Pad the array to the required frame count
             input_2D_no = np.pad(input_2D_no, ((left_pad, right_pad), (0, 0), (0, 0)), 'edge')
-        
-        joints_left =  [4, 5, 6, 11, 12, 13]
-        joints_right = [1, 2, 3, 14, 15, 16]
 
-        # input_2D_no += np.random.normal(loc=0.0, scale=5, size=input_2D_no.shape)
-        input_2D = normalize_screen_coordinates(input_2D_no, w=img_size[1], h=img_size[0])  
+        # 3. Normalize coordinates
+        # This function is from your `poseformerv2.camera` import
+        input_2D = normalize_screen_coordinates(input_2D_no, w=width, h=height)
 
+        # 4. Augment (flip)
         input_2D_aug = copy.deepcopy(input_2D)
-        input_2D_aug[ :, :, 0] *= -1
-        input_2D_aug[ :, joints_left + joints_right] = input_2D_aug[ :, joints_right + joints_left]
-        input_2D = np.concatenate((np.expand_dims(input_2D, axis=0), np.expand_dims(input_2D_aug, axis=0)), 0)
-        # (2, 243, 17, 2)
+        input_2D_aug[:, :, 0] *= -1
+        joints_left = [4, 5, 6, 11, 12, 13]
+        joints_right = [1, 2, 3, 14, 15, 16]
+        input_2D_aug[:, joints_left + joints_right] = input_2D_aug[:, joints_right + joints_left]
         
-        input_2D = input_2D[np.newaxis, :, :, :, :]
+        # 5. Batch and format for model
+        # Shape: (2, N_frames, 17, 2)
+        input_2D = np.concatenate((np.expand_dims(input_2D, axis=0), np.expand_dims(input_2D_aug, axis=0)), 0)
+        input_2D = torch.from_numpy(input_2D.astype('float32')).to("cuda")
 
-        input_2D = torch.from_numpy(input_2D.astype('float32')).cuda()
+        # Add batch dimension for the model
+        # Shape: (1, 2, N_frames, 17, 2)
+        input_2D = input_2D.unsqueeze(0)
 
-        N = input_2D.size(0)
+        # 6. Run model
+        with torch.no_grad():
+            # Input shape: (1, N_frames, 17, 2)
+            output_3D_non_flip = model(input_2D[:, 0])
+            output_3D_flip = model(input_2D[:, 1])
 
-        ## estimation
-        output_3D_non_flip = model(input_2D[:, 0]) 
-        output_3D_flip     = model(input_2D[:, 1])
-        # [1, 1, 17, 3]
-
+        # 7. Post-process (average flipped and non-flipped)
         output_3D_flip[:, :, :, 0] *= -1
-        output_3D_flip[:, :, joints_left + joints_right, :] = output_3D_flip[:, :, joints_right + joints_left, :] 
-
+        output_3D_flip[:, :, joints_left + joints_right, :] = output_3D_flip[:, :, joints_right + joints_left, :]
+        
         output_3D = (output_3D_non_flip + output_3D_flip) / 2
+        output_3D[:, :, 0, :] = 0 # Root-relative (set pelvis to 0,0,0)
+        
+        # Get the 3D pose for the center frame
+        # Shape: (17, 3)
+        post_out = output_3D[0, 0].cpu().numpy()
+        
+        all_3d_poses_h36m.append(post_out)
 
-        output_3D[:, :, 0, :] = 0
-        post_out = output_3D[0, 0].cpu().detach().numpy()
+    # Stack all (17, 3) poses into (N, 17, 3)
+    all_3d_poses_h36m = np.stack(all_3d_poses_h36m, axis=0)
 
-        rot =  [0.1407056450843811, -0.1500701755285263, -0.755240797996521, 0.6223280429840088]
-        rot = np.array(rot, dtype='float32')
-        post_out = camera_to_world(post_out, R=rot, t=0)
-        post_out[:, 2] -= np.min(post_out[:, 2])
-        coco_skeleton_frames.append(post_out)
-
-
-    ntu_skeleton_frames = [coco17_to_ntu25(kpts) for kpts in coco_skeleton_frames]
-    ntu_skeleton_frames = np.stack(ntu_skeleton_frames)
-    return ntu_skeleton_frames
+    # === Step 4: Convert 3D H36M-17 -> 3D NTU-25 ===
+    all_3d_poses_ntu = []
+    for i in range(all_3d_poses_h36m.shape[0]):
+        pose_17 = all_3d_poses_h36m[i]
+        pose_25 = _h36m17_to_ntu25(pose_17)
+        all_3d_poses_ntu.append(pose_25)
+        
+    # Stack all (25, 3) poses into (N, 25, 3)
+    return np.stack(all_3d_poses_ntu, axis=0)
 
 def main():
     print("Loading model")
@@ -334,10 +449,10 @@ def main():
         parts = video_path.stem.split("_")
         label_stable_unstable = int(parts[0]) # 0 = stable/1 = unstable
         subject = int(parts[1][:-2]) # there's a trailing "tg" for some reason, we trim it off here (thus the :-2)
-        label_sarcopenia_normal = int(parts[2]) # 0 = sarcopenia/1 = normal
+        label_sarcopenia_normal = int(parts[2]) # 1 = sarcopenia/2 = normal
 
         try:
-            arr = video_to_array(model, str(video_path))
+            arr = video_to_array(model, str(video_path), args)
             arr = arr.reshape(-1, 75)
             video_skel.append(arr)
             sarcopenia_labels.append(label_sarcopenia_normal)
@@ -366,3 +481,4 @@ def main():
 if __name__ == "__main__":
     main()
 
+format

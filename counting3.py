@@ -1,6 +1,5 @@
 import pandas as pd
 from pathlib import Path
-# from tabulate import tabulate
 
 CLS_STABLE = 0
 CLS_UNSTABLE = 1
@@ -10,7 +9,6 @@ CLS_NORMAL = 2
 VIDEO_PATH = Path("/Users/aldo/Code/avlab/dataset/stable_unstable")
 STABLE_PATH = VIDEO_PATH / "stable"
 UNSTABLE_PATH = VIDEO_PATH / "unstable"
-
 samples_paths = list(STABLE_PATH.iterdir()) + list(UNSTABLE_PATH.iterdir())
 
 data = []
@@ -30,22 +28,22 @@ for path in samples_paths:
     if class_sarcopenia_normal == CLS_NORMAL:
         label_sarcopenia_normal = "normal"
 
-    full_path = label_stable_unstable + "/" + path.name
+    full_path = path.name
     data.append((subject, label_stable_unstable, label_sarcopenia_normal, full_path))
 
 df = pd.DataFrame(data, columns=["subject", "stable-unstable", "sarcopenia-normal", "clip_path"])
 
 df["original_subject_idx"] = df["subject"]
 df.loc[df["sarcopenia-normal"] == "sarcopenia", "subject"] += 1000
-print(df.sort_values(by="subject"))
-df.sort_values(by="subject").to_csv("csvs/clips.csv")
+# print(df.sort_values(by="subject"))
+df.to_csv("csvs/clips.csv")
     
 # Collapse clips into subjects
 df = df.groupby(
-    ['subject', 'sarcopenia-normal', 'original_subject_idx', 'clip_path', 'stable-unstable']
+    ['subject', 'sarcopenia-normal', 'original_subject_idx', 'stable-unstable']
 ).size().unstack(fill_value=0).reset_index()
 df['clip_count'] = df['stable'] + df['unstable']
-df['subject'] = df.index
+# df['subject'] = df.index
 # Reorder
 df = df[[
     'subject',
@@ -54,15 +52,12 @@ df = df[[
     'clip_count',
     'stable',
     'unstable',
-    'clip_path',
 ]]
 
-df.sort_values(by="subject").to_csv("csvs/subjects.csv")
-
+df.to_csv("csvs/subjects.csv")
 
 # print(f"{df.loc[df['sarcopenia-normal'] == 'normal', 'unstable'].mean()}")
 # print(f"{df.loc[df['sarcopenia-normal'] == 'sarcopenia', 'unstable'].mean()}")
-
 # P_unstable = (df["stable-unstable"] == "unstable").mean()
 # P_sarcopenia = (df["sarcopenia-normal"] == "sarcopenia").mean()
 # ct = pd.crosstab(df["stable-unstable"], df["sarcopenia-normal"], normalize="index")

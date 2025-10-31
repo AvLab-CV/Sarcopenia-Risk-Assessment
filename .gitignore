@@ -1,4 +1,7 @@
 __pycache__/
 /output
+/output2
 /models
+/folds
+/csvs
 .DS_Store
