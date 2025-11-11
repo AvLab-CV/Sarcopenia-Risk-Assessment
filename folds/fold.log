@@ -1,0 +1,47 @@
+
+TOTAL clips: 458 | stable: 335 unstable: 123
+Desired (approx):
+ train -> stable~234.5 unstable~86.1
+ val   -> stable~33.5 unstable~12.3
+ test  -> stable~67.0 unstable~24.6
+Created directory folds
+
+FOLD 1/4 summary:
+  train | subjects=103 | clips=320 | stable:unstable=234:86 | stable%=0.73
+  val   | subjects=15 | clips= 47 | stable:unstable=34:13 | stable%=0.72
+  test  | subjects=24 | clips= 91 | stable:unstable=67:24 | stable%=0.74
+  -> wrote folds/fold1_subjects.csv
+  test subjects (24): [2, 4, 9, 14, 28, 29, 35, 37, 39, 44, 45, 50, 86, 94, 102, 109, 111, 119, 122, 128, 130, 133, 137, 141]
+  val  subjects (15): [10, 40, 46, 53, 56, 57, 58, 59, 61, 62, 73, 82, 88, 110, 116]
+
+FOLD 2/4 summary:
+  train | subjects=99 | clips=320 | stable:unstable=234:86 | stable%=0.73
+  val   | subjects=13 | clips= 45 | stable:unstable=33:12 | stable%=0.73
+  test  | subjects=30 | clips= 93 | stable:unstable=68:25 | stable%=0.73
+  -> wrote folds/fold2_subjects.csv
+  test subjects (30): [0, 3, 7, 13, 22, 28, 36, 40, 43, 45, 62, 63, 64, 77, 80, 82, 83, 84, 89, 98, 99, 106, 109, 110, 128, 132, 133, 135, 138, 141]
+  val  subjects (13): [12, 16, 42, 51, 58, 73, 78, 92, 93, 105, 118, 119, 125]
+
+FOLD 3/4 summary:
+  train | subjects=99 | clips=320 | stable:unstable=234:86 | stable%=0.73
+  val   | subjects=16 | clips= 44 | stable:unstable=33:11 | stable%=0.75
+  test  | subjects=27 | clips= 94 | stable:unstable=68:26 | stable%=0.72
+  -> wrote folds/fold3_subjects.csv
+  test subjects (27): [13, 21, 31, 41, 42, 51, 54, 56, 57, 64, 70, 80, 84, 89, 97, 99, 103, 110, 113, 114, 115, 116, 119, 122, 128, 132, 135]
+  val  subjects (16): [15, 19, 20, 22, 28, 32, 34, 37, 38, 53, 73, 88, 105, 109, 129, 131]
+
+FOLD 4/4 summary:
+  train | subjects=101 | clips=320 | stable:unstable=234:86 | stable%=0.73
+  val   | subjects=12 | clips= 45 | stable:unstable=33:12 | stable%=0.73
+  test  | subjects=29 | clips= 93 | stable:unstable=68:25 | stable%=0.73
+  -> wrote folds/fold4_subjects.csv
+  test subjects (29): [0, 7, 12, 13, 18, 21, 23, 28, 30, 35, 39, 49, 50, 56, 61, 64, 66, 88, 89, 91, 101, 111, 112, 121, 126, 130, 136, 137, 139]
+  val  subjects (12): [6, 42, 54, 63, 74, 83, 87, 92, 103, 119, 122, 135]
+
+Test-set similarity matrix
+[[0.         0.125      0.0625     0.15217391]
+ [0.         0.         0.21276596 0.11320755]
+ [0.         0.         0.         0.09803922]
+ [0.         0.         0.         0.        ]]
+
+For better results, try increasing --max_attempts or changing --seed.
