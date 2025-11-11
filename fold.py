@@ -101,6 +101,12 @@ def main():
     parser.add_argument("--seed", type=int, default=1234)
     OUT_DIR = "folds"
 
+    if os.path.exists(OUT_DIR):
+        print(f"Output directory {OUT_DIR} already exists.")
+        print("Aborting for safety.")
+        exit(1)
+        return
+
     args = parser.parse_args()
 
     df = pd.read_csv(args.csv)
@@ -159,7 +165,7 @@ def main():
                     "clip_count": subj_stats[subject]["stable"] + subj_stats[subject]["unstable"],
                     "stable": subj_stats[subject]["stable"],
                     "unstable": subj_stats[subject]["unstable"],
-                    "path": df[df["subject"] == subject]["path"].iloc[0],
+                    # "path": df[df["subject"] == subject]["path"].iloc[0],
                 }
                 for subject in sorted(assign.keys())
             ]

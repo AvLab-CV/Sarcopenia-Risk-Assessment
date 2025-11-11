@@ -8,10 +8,10 @@ import einops
 import cv2
 from pathlib import Path
 
-PICKLE_PATH = "output/NEW_video_skel.pkl"
-PATHS_PATH = "output/NEW_paths.txt"
+PICKLE_PATH = "output2/NEW_video_skel.pkl"
+PATHS_PATH = "output2/NEW_paths.txt"
 
-VIDEO_PATH = Path("/media/Eason/TMU_dataset/stable_usntable")
+VIDEO_PATH = Path("/Users/aldo/Code/avlab/dataset/resized_400/")
 VIDEOS = [Path(p.strip()) for p in open(PATHS_PATH, "r")]
 VIDEOS = [VIDEO_PATH / p.parts[-2] / p.parts[-1] for p in VIDEOS]
 
@@ -90,9 +90,10 @@ for i in range(len(skels)):
     # skels[i] = einops.einsum(rotation, skels[i], "coord_i coord_j, frame joint coord_j -> frame joint coord_i")
 
     # Y <-> Z
-    # skels[i] = skels[i][:, :, [0, 2, 1]]
+    skels[i] = skels[i][:, :, [0, 2, 1]]
     # skels[i][:, :, 0] *= -1.0
-    # skels[i][:, :, 2] *= -1.0
+    skels[i][:, :, 2] *= -1.0
+    skels[i][:, :, 2] += 1
 
 skels_lines = [skel[:, SKELETON_CONNECTIONS, :] for skel in skels]
 
@@ -140,6 +141,7 @@ def animate(i):
     skel = skels[anim_idx]
     skel_lines = skels_lines[anim_idx]
 
+    fig.suptitle(VIDEOS[anim_idx], fontsize=16)
     lines.set_segments(skel_lines[frame])
     points._offsets3d = (skel[frame, :, 0], skel[frame, :, 1], skel[frame, :, 2])
 

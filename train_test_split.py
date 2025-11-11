@@ -1,43 +1,79 @@
-### Randomly splits a PKL list and labels.txt into 
 import pickle
-import random
-# import numpy as np
+import pandas as pd
+import numpy as np
 
-SKEL_PKL_INPUT = "output/NEW_video_skel.pkl"
-SKEL_PKL_TRAIN_OUTPUT = "output/final/train_skel.pkl"
-SKEL_PKL_TEST_OUTPUT = "output/final/test_skel.pkl"
-STABLE_UNSTABLE_LABELS_INPUT = "output/NEW_unstable_labels.txt"
-STABLE_UNSTABLE_LABELS_TRAIN_OUTPUT = "output/final/train_unstable_labels.txt"
-STABLE_UNSTABLE_LABELS_TEST_OUTPUT = "output/final/test_unstable_labels.txt"
-TRAIN_FRACTION = 0.70 # test fraction is (1 - TRAIN_FRACTION)
 
-# Load
-with open(SKEL_PKL_INPUT, 'rb') as fr:
-    skel = pickle.load(fr)  # a list
-labels = [int(label.strip()) for label in open(STABLE_UNSTABLE_LABELS_INPUT, "r")]
+SUBJECTS    = "csvs/subjects.csv"
+CLIPS       = "csvs/clips.csv"
+SKEL_ARRAYS = "output2/skels.npz"
 
-# Merge, shuffle, unmerge
-assert len(skel) == len(labels), f"Skeleton count and label count must be equal. {len(skel)} != {len(labels)}"
-merged = list(zip(skel, labels))
-random.shuffle(merged)
-skel, labels = zip(*merged) # <- unzips
-skel = list(skel)
-labels = list(labels)
+# import argparse
+# args = argparse.ArgumentParser()
+# args.add_argument('fold', help="fold CSV")
+# args.add_argument('output', help="the output")
+# args = args.parse_args()
+# FOLD        = args.fold
+# OUTPUT      = args.output
 
-# Split skeletons and labels
-train_idx = int(len(skel) * TRAIN_FRACTION)
-skel_train = skel[:train_idx]
-skel_test = skel[train_idx:]
-train_labels = labels[:train_idx]
-test_labels = labels[train_idx:]
+skels = np.load(SKEL_ARRAYS)
+subjects = pd.read_csv(SUBJECTS, index_col=0)
+clips = pd.read_csv(CLIPS, index_col=0)
 
-# Save
-with open(SKEL_PKL_TRAIN_OUTPUT, 'wb') as f:
-    pickle.dump(skel_train, f)
-with open(SKEL_PKL_TEST_OUTPUT, 'wb') as f:
-    pickle.dump(skel_test, f)
+def fold_csv_to_skel_pkl(fold):
+    train_X = []
+    train_Y = []
+    train_clips = []
+    val_X   = []
+    val_Y   = []
+    val_clips = []
+    test_X  = []
+    test_Y  = []
+    test_clips = []
 
-with open(STABLE_UNSTABLE_LABELS_TRAIN_OUTPUT, 'w') as f:
-    f.writelines(f"{label}\n" for label in train_labels)
-with open(STABLE_UNSTABLE_LABELS_TEST_OUTPUT, 'w') as f:
-    f.writelines(f"{label}\n" for label in test_labels)
+    for subj_idx, subj in fold.iterrows():
+        subj_id = subjects.iloc[subj_idx]["subject"]
+        subj_clips = clips.loc[clips["subject"] == subj_id]
+        subj_clip_paths = subj_clips["clip_path"]
+        subj_skels = [skels[name] for name in subj_clip_paths]
+        subj_labels = [int(stable_unstable == "unstable") for stable_unstable in subj_clips["stable-unstable"]]
+
+        if subj["split"] == "train":
+            train_X.extend(subj_skels)
+            train_Y.extend(subj_labels)
+            train_clips.extend(subj_clip_paths)
+        if subj["split"] == "val":
+            val_X.extend(subj_skels)
+            val_Y.extend(subj_labels)
+            val_clips.extend(subj_clip_paths)
+        if subj["split"] == "test":
+            test_X.extend(subj_skels)
+            test_Y.extend(subj_labels)
+            test_clips.extend(subj_clip_paths)
+
+    return dict(
+        train_X=train_X,
+        train_Y=train_Y,
+        train_clips=train_clips,
+        val_X=val_X,
+        val_Y=val_Y,
+        val_clips=val_clips,
+        test_X=test_X,
+        test_Y=test_Y,
+        test_clips=test_clips,
+    )
+
+
+folds = [
+    ("folds/fold1_subjects.csv", "output2/fold1.pkl"),
+    ("folds/fold2_subjects.csv", "output2/fold2.pkl"),
+    ("folds/fold3_subjects.csv", "output2/fold3.pkl"),
+    ("folds/fold4_subjects.csv", "output2/fold4.pkl"),
+]
+
+for fold_path, output_path in folds:
+    fold  = pd.read_csv(fold_path)
+    out = fold_csv_to_skel_pkl(fold)
+
+    print(f"Output to {output_path}")
+    with open(output_path, 'wb') as f:
+        pickle.dump(out, f)

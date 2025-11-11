@@ -1,53 +1,69 @@
-from collections import defaultdict
+import pandas as pd
 from pathlib import Path
-from tqdm import tqdm
 
 CLS_STABLE = 0
 CLS_UNSTABLE = 1
 CLS_SARCOPENIA = 1
 CLS_NORMAL = 2
 
-VIDEO_PATH = Path("/Users/aldo/Code/avlab/dataset/stable_unstable")
+VIDEO_PATH = Path("/Users/aldo/Code/avlab/dataset/stable_unstable_ver2")
 STABLE_PATH = VIDEO_PATH / "stable"
 UNSTABLE_PATH = VIDEO_PATH / "unstable"
 samples_paths = list(STABLE_PATH.iterdir()) + list(UNSTABLE_PATH.iterdir())
-samples = []
 
-subjects = defaultdict(list)
-stable = defaultdict(list)
-unstable = defaultdict(list)
-sarcopenia = defaultdict(list)
-normal = defaultdict(list)
-
-for idx, path in enumerate(samples_paths):
+data = []
+for path in samples_paths:
     parts = path.stem.split("_")
-    label_stable_unstable = int(parts[0]) # 0 = stable/1 = unstable
-    subject = int(parts[1][:-2]) # there's a trailing "tg" for some reason, we trim it off here (thus the :-2)
-    label_sarcopenia_normal = int(parts[2]) # sarcopenia/normal
+    class_stable_unstable = int(parts[0])
+    subject = int(parts[1][:-2])
+    class_sarcopenia_normal = int(parts[2])
 
-    samples.append(dict(
-                       idx=idx,
-                       subject=subject,
-                       label_stable_unstable=label_stable_unstable,
-                       label_sarcopenia_normal=label_sarcopenia_normal,
-                   ))
+    if class_stable_unstable == CLS_STABLE:
+        label_stable_unstable = "stable"
+    if class_stable_unstable == CLS_UNSTABLE:
+        label_stable_unstable = "unstable"
 
-    subjects[idx].append(idx)
+    if class_sarcopenia_normal == CLS_SARCOPENIA:
+        label_sarcopenia_normal = "sarcopenia"
+    if class_sarcopenia_normal == CLS_NORMAL:
+        label_sarcopenia_normal = "normal"
 
-    if label_stable_unstable == CLS_STABLE:
-        stable[idx].append(idx)
-    if label_stable_unstable == CLS_UNSTABLE:
-        unstable[idx].append(idx)
+    full_path = path.name
+    data.append((subject, label_stable_unstable, label_sarcopenia_normal, full_path))
 
-    if label_sarcopenia_normal == CLS_SARCOPENIA:
-        sarcopenia[idx].append(idx)
-    if label_sarcopenia_normal == CLS_NORMAL:
-        normal[idx].append(idx)
+df = pd.DataFrame(data, columns=["subject", "stable-unstable", "sarcopenia-normal", "clip_path"])
 
+df["original_subject_idx"] = df["subject"]
+df.loc[df["sarcopenia-normal"] == "sarcopenia", "subject"] += 1000
+df.to_csv("csvs/clips.csv")
+    
+# Collapse clips into subjects
+df = df.groupby(
+    ['subject', 'sarcopenia-normal', 'original_subject_idx', 'stable-unstable']
+).size().unstack(fill_value=0).reset_index()
+df['clip_count'] = df['stable'] + df['unstable']
+# df['subject'] = df.index
+# Reorder
+df = df[[
+    'subject',
+    'sarcopenia-normal',
+    'original_subject_idx',
+    'clip_count',
+    'stable',
+    'unstable',
+]]
+df.to_csv("csvs/subjects.csv")
 
-print(f"{len(samples)=}")
-print(f"{len(subjects)=}")
-print(f"{len(stable)=}")
-print(f"{len(unstable)=}")
-print(f"{len(sarcopenia)=}")
-print(f"{len(normal)=}")
+# print(f"{df.loc[df['sarcopenia-normal'] == 'normal', 'unstable'].mean()}")
+# print(f"{df.loc[df['sarcopenia-normal'] == 'sarcopenia', 'unstable'].mean()}")
+# P_unstable = (df["stable-unstable"] == "unstable").mean()
+# P_sarcopenia = (df["sarcopenia-normal"] == "sarcopenia").mean()
+# ct = pd.crosstab(df["stable-unstable"], df["sarcopenia-normal"], normalize="index")
+# P_sarcopenia_given_unstable = ct.loc["unstable", "sarcopenia"]
+# print((df["stable-unstable"] == "stable").sum())
+# print((df["stable-unstable"] == "unstable").sum())
+# print((df["sarcopenia-normal"] == "sarcopenia").sum())
+# print((df["sarcopenia-normal"] == "normal").sum())
+# print(f"{P_unstable=:.3f}")
+# print(f"{P_sarcopenia=:.3f}")
+# print(f"{P_sarcopenia_given_unstable=:.3f}")

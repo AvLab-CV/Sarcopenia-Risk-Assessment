@@ -2,18 +2,10 @@
 # Licensed under the MIT License.
 import numpy as np
 import pickle
-from sklearn.model_selection import train_test_split
+from tqdm import tqdm
 
-SET            = "train"
-LABELS_INPUT   = 'output/final/train_augmented_labels.txt'
-SKEL_PKL_INPUT = 'output/final/train_augmented_skel.pkl'
-OUTPUT         = 'output/final/train.npz'
-
-# SET            = "test"
-# LABELS_INPUT   = 'output/final/test_unstable_labels.txt'
-# SKEL_PKL_INPUT = 'output/final/test_skel.pkl'
-# OUTPUT         = 'output/final/test.npz'
-
+INPUT          =             './output_merged/merged.pkl'
+OUTPUT         = './output_merged/skateformer/merged.npz'
 
 def remove_nan_frames(ske_joints, nan_logger):
     num_frames = ske_joints.shape[0]
@@ -29,10 +21,10 @@ def remove_nan_frames(ske_joints, nan_logger):
     return ske_joints[valid_frames]
 
 def seq_translation(skes_joints):
-    for idx, ske_joints in enumerate(skes_joints):
+    for idx, ske_joints in tqdm(enumerate(skes_joints), total=len(skes_joints)):
         num_frames = ske_joints.shape[0]
         num_bodies = 1 if ske_joints.shape[1] == 75 else 2
-        print(ske_joints.shape)
+        
         if num_bodies == 2:
             missing_frames_1 = np.where(ske_joints[:, :75].sum(axis=1) == 0)[0]
             missing_frames_2 = np.where(ske_joints[:, 75:].sum(axis=1) == 0)[0]
@@ -70,7 +62,7 @@ def align_frames(skes_joints):
 
     """
     num_skes = len(skes_joints)
-    max_num_frames = 91
+    max_num_frames = 1000
     aligned_skes_joints = np.zeros((num_skes, max_num_frames, 150), dtype=np.float32)
 
     for idx, ske_joints in enumerate(skes_joints):
@@ -88,57 +80,40 @@ def align_frames(skes_joints):
 def one_hot_vector(labels):
     num_skes = len(labels)
     labels_vector = np.zeros((num_skes, 2))
-    for idx, l in enumerate(labels):
-        labels_vector[idx, l] = 1
+
+    for idx,  class_idx in enumerate(labels):
+        labels_vector[idx, int(class_idx)] = 1
 
     return labels_vector
 
 
-def split_train_val(train_indices, method='sklearn', ratio=0.05):
-    """
-    Get validation set by splitting data randomly from training set with two methods.
-    In fact, I thought these two methods are equal as they got the same performance.
-
-    """
-    if method == 'sklearn':
-        return train_test_split(train_indices, test_size=ratio, random_state=10000)
-    else:
-        np.random.seed(10000)
-        np.random.shuffle(train_indices)
-        val_num_skes = int(np.ceil(0.05 * len(train_indices)))
-        val_indices = train_indices[:val_num_skes]
-        train_indices = train_indices[val_num_skes:]
-        return train_indices, val_indices
-
-
-def split_dataset(skes_joints, labels):
-    x = skes_joints
-    y = one_hot_vector(labels)
-    x_shape_zero = (0,) + x.shape[1:]
-    y_shape_zero = (0,) + y.shape[1:]
-
-    if SET == "train":
-        train_x = x
-        train_y = y
-        test_x = np.zeros(x_shape_zero)
-        test_y = np.zeros(y_shape_zero)
-    else:
-        train_x = np.zeros(x_shape_zero)
-        train_y = np.zeros(y_shape_zero)
-        test_x = x
-        test_y = y
-
-    np.savez(OUTPUT, x_train=train_x, y_train=train_y, x_test=test_x, y_test=test_y)
-
-
 if __name__ == '__main__':
-    labels = np.loadtxt(LABELS_INPUT, dtype=np.int32) - 1  # action label: 0~1
+    with open(INPUT, 'rb') as fr:
+        fold = pickle.load(fr)
 
-    with open(SKEL_PKL_INPUT, 'rb') as fr:
-        skes_joints = pickle.load(fr)  # a list
+    data = {}
+    for set_name in ["train", "val", "test"]:
+        # DeMorgan's Law.
+        if (set_name + "_X") not in fold or (set_name + "_Y") not in fold:
+            continue
 
-    skes_joints = seq_translation(skes_joints)
-    skes_joints = align_frames(skes_joints)  # aligned to the same frame length
+        print(f"Set: {set_name}")
 
-    print(skes_joints.shape)
-    split_dataset(skes_joints, labels)
+        skes_joints = fold[set_name + "_X"]
+        labels      = fold[set_name + "_Y"]
+        skes_joints = seq_translation(skes_joints)
+        skes_len = np.array([sk.shape[0] for sk in skes_joints]) # <- save the original length before alignment
+        skes_joints = align_frames(skes_joints)  # aligned to the same frame length
+
+        data["x_" + set_name] = skes_joints
+        data["len_" + set_name] = skes_len
+        data["y_" + set_name] = one_hot_vector(labels)
+
+        print("x shape", data["x_" + set_name].shape)
+        print("y shape", data["y_" + set_name].shape)
+        print("normal     count=", data["y_" + set_name][:, 0].sum().item())
+        print("sarcopenia count=", data["y_" + set_name][:, 1].sum().item())
+        print()
+
+    np.savez(OUTPUT, **data)
+    print(f"Wrote final training-ready .npz to {OUTPUT}")
