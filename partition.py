@@ -61,11 +61,11 @@ def compute_overlap(assign1, assign2, split1='test', split2='test'):
         return 0.0
     return len(set1 & set2) / len(set1 | set2)
 
-def make_diverse_splits(subj_stats, p=(0.7,0.1,0.2), folds=5, max_attempts=500, 
+def make_diverse_splits(subj_stats, p=(0.7,0.1,0.2), partitions=5, max_attempts=500, 
                         max_overlap=0.15, seed=1234):
     """
-    Create folds with explicitly diverse test/val sets.
-    max_overlap: maximum Jaccard similarity allowed between test sets of different folds
+    Create partitions with explicitly diverse test/val sets.
+    max_overlap: maximum Jaccard similarity allowed between test sets of different partitions
     """
     all_subjs = list(subj_stats.keys())
     total_stable = sum(v["stable"] for v in subj_stats.values())
@@ -74,11 +74,11 @@ def make_diverse_splits(subj_stats, p=(0.7,0.1,0.2), folds=5, max_attempts=500,
     desired = {k: {"stable": total_stable * props[k], "unstable": total_unstable * props[k]} for k in props}
     rng = random.Random(seed)
 
-    fold_results = []
-    previous_folds = []  # Store previous fold assignments
+    partition_results = []
+    previous_partitions = []  # Store previous partition assignments
 
-    for f in range(folds):
-        print(f"\nSearching for fold {f+1}...")
+    for f in range(partitions):
+        print(f"\nSearching for partition {f+1}...")
         best_attempt = None
         best_score = None
         attempts_made = 0
@@ -94,13 +94,13 @@ def make_diverse_splits(subj_stats, p=(0.7,0.1,0.2), folds=5, max_attempts=500,
             for k in desired:
                 balance_error += abs(current[k]["stable"] - desired[k]["stable"]) + abs(current[k]["unstable"] - desired[k]["unstable"])
             
-            # Compute diversity penalty: overlap with previous folds
+            # Compute diversity penalty: overlap with previous partitions
             diversity_penalty = 0.0
             max_test_overlap = 0.0
             max_val_overlap = 0.0
             
-            if previous_folds:
-                for prev_assign in previous_folds:
+            if previous_partitions:
+                for prev_assign in previous_partitions:
                     test_overlap = compute_overlap(assign, prev_assign, 'test', 'test')
                     val_overlap = compute_overlap(assign, prev_assign, 'val', 'val')
                     max_test_overlap = max(max_test_overlap, test_overlap)
@@ -129,22 +129,23 @@ def make_diverse_splits(subj_stats, p=(0.7,0.1,0.2), folds=5, max_attempts=500,
                 print(f"  Attempt {attempt}: best test_overlap={max_test_overlap:.3f}, val_overlap={max_val_overlap:.3f}")
             rng.seed(seed + f*10000 + attempt + rng.randint(0,99999))
         
-        # Finalize fold f
+        # Finalize partition f
         assign, current, test_overlap, val_overlap, balance = best_attempt
         print(f"  Final: test_overlap={test_overlap:.3f}, val_overlap={val_overlap:.3f}, balance={balance:.3f}")
         
-        previous_folds.append(assign)
+        previous_partitions.append(assign)
         
         # Summary
         sums = summarize_assign(assign, subj_stats)
-        fold_results.append({"assign": assign, "summary": sums})
+        partition_results.append({"assign": assign, "summary": sums})
     
-    return fold_results, desired
+    return partition_results, desired
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--csv", required=True, help="CSV with columns subject,stable,unstable,...")
-    parser.add_argument("--folds", type=int, default=5)
+    parser.add_argument("csv", help="CSV with columns subject,stable,unstable,...")
+    parser.add_argument("out_dir", type=str)
+    parser.add_argument("--partitions", type=int, default=5)
     parser.add_argument("--p_train", type=float, default=0.7)
     parser.add_argument("--p_val", type=float, default=0.1)
     parser.add_argument("--p_test", type=float, default=0.2)
@@ -152,7 +153,6 @@ def main():
     parser.add_argument("--max_overlap", type=float, default=0.15, 
                        help="Maximum allowed Jaccard overlap between test sets (0-1)")
     parser.add_argument("--seed", type=int, default=1234)
-    parser.add_argument("--out_dir", type=str, default="folds_diverse")
     args = parser.parse_args()
 
     OUT_DIR = args.out_dir
@@ -170,9 +170,9 @@ def main():
     for _, r in grouped.iterrows():
         subj_stats[int(r["subject"])] = {"stable": int(r["stable"]), "unstable": int(r["unstable"])}
 
-    folds_data, desired = make_diverse_splits(subj_stats,
+    partitions_data, desired = make_diverse_splits(subj_stats,
                                               p=(args.p_train, args.p_val, args.p_test),
-                                              folds=args.folds,
+                                              partitions=args.partitions,
                                               max_attempts=args.max_attempts,
                                               max_overlap=args.max_overlap,
                                               seed=args.seed)
@@ -189,14 +189,14 @@ def main():
     os.makedirs(OUT_DIR)
     print(f"\nCreated directory {OUT_DIR}")
 
-    # write per-fold results and print summaries
+    # write per-partition results and print summaries
     train_sets = []
     test_sets = []
     val_sets = []
-    for i, fold in enumerate(folds_data):
-        assign = fold["assign"]
-        sums = fold["summary"]
-        print(f"\nFOLD {i+1}/{len(folds_data)} summary:")
+    for i, partition in enumerate(partitions_data):
+        assign = partition["assign"]
+        sums = partition["summary"]
+        print(f"\npartition {i+1}/{len(partitions_data)} summary:")
         pretty_print_summary(sums)
         
         # write subject->split CSV
@@ -213,11 +213,11 @@ def main():
                 for subject in sorted(assign.keys())
             ]
         )
-        out_fn = f"{OUT_DIR}/fold{i+1}_subjects.csv"
-        out.to_csv(out_fn, index=False)
+        out_fn = f"{OUT_DIR}/partition{i+1}.csv"
+        out.to_csv(out_fn)
         print(f"  -> wrote {out_fn}")
         
-        # collect sets for cross-fold comparison
+        # collect sets for cross-partition comparison
         train_subs = sorted([s for s,split in assign.items() if split=="train"])
         test_subs = sorted([s for s,split in assign.items() if split=="test"])
         val_subs = sorted([s for s,split in assign.items() if split=="val"])
@@ -229,7 +229,7 @@ def main():
 
     # Compute overlap matrices
     print("\n" + "="*60)
-    print("TEST SET OVERLAP MATRIX (Jaccard similarity)")
+    print("TEST SET OVERLAP MATRIX (IoU/Jaccard similarity)")
     print("="*60)
     test_matrix = np.zeros((len(test_sets), len(test_sets)))
     for i in range(len(test_sets)):
@@ -254,9 +254,9 @@ def main():
     print(f"\nAverage val set overlap: {np.mean(val_matrix[val_matrix > 0]):.3f}")
     print(f"Max val set overlap: {np.max(val_matrix):.3f}")
 
-    # check overlap within each fold (should be disjoint)
+    # check overlap within each partition (should be disjoint)
     print("\n" + "="*60)
-    print("CHECKING WITHIN-FOLD OVERLAPS (should all be empty)")
+    print("CHECKING WITHIN-partition OVERLAPS (should all be empty)")
     print("="*60)
     for i, (train_set, test_set, val_set) in enumerate(zip(train_sets, test_sets, val_sets)):
         inter1 = train_set & val_set
@@ -264,11 +264,11 @@ def main():
         inter3 = val_set   & test_set
 
         if inter1:
-            print(f"ERROR: fold {i+1} has overlap between train and val subjects: {sorted(inter1)}")
+            print(f"ERROR: partition {i+1} has overlap between train and val subjects: {sorted(inter1)}")
         if inter2:
-            print(f"ERROR: fold {i+1} has overlap between train and test subjects: {sorted(inter2)}")
+            print(f"ERROR: partition {i+1} has overlap between train and test subjects: {sorted(inter2)}")
         if inter3:
-            print(f"ERROR: fold {i+1} has overlap between test and val subjects: {sorted(inter3)}")
+            print(f"ERROR: partition {i+1} has overlap between test and val subjects: {sorted(inter3)}")
     
     print("\n" + "="*60)
     print(f"If overlap is too high, try:")

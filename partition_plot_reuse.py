@@ -1,23 +1,30 @@
-import pandas as pd
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
+import argparse
 from pathlib import Path
-import numpy as np
 
-FOLDS = [
-    Path("folds_diverse/fold1_subjects.csv"),
-    Path("folds_diverse/fold2_subjects.csv"),
-    Path("folds_diverse/fold3_subjects.csv"),
-    Path("folds_diverse/fold4_subjects.csv"),
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
+parser = argparse.ArgumentParser()
+parser.add_argument("partition_dir", type=Path)
+parser.add_argument("partition_count", type=int)
+args = parser.parse_args()
+PARTITIONS_COUNT = args.partition_count
+PARTITION_DIR = args.partition_dir
+print(f"Looking for {PARTITIONS_COUNT} partitions in `{PARTITION_DIR}`")
+partition_paths = [
+    PARTITION_DIR / f"partition{partition + 1}.csv"
+    for partition in range(PARTITIONS_COUNT)
 ]
 
-# Load all fold data
-fold_dfs = [pd.read_csv(fold) for fold in FOLDS]
 
-# Extract test subjects for each fold
+# Load all partition data
+partition_dfs = [pd.read_csv(partition) for partition in partition_paths]
+
+# Extract test subjects for each partition
 test_subjects = []
 val_subjects = []
-for df in fold_dfs:
+for df in partition_dfs:
     test_subjects.append(set(df[df['split'] == 'test']['subject'].values))
     val_subjects.append(set(df[df['split'] == 'val']['subject'].values))
 
@@ -40,13 +47,13 @@ for i, test_set in enumerate(test_subjects):
     
     all_tested.update(test_set)
 
-x = np.arange(len(FOLDS))
+x = np.arange(len(partition_paths))
 width = 0.6
 
 bars1 = ax1.bar(x, bar_data['new'], width, label='New (never tested before)', 
                 color='#2ecc71', alpha=0.8)
 bars2 = ax1.bar(x, bar_data['reused'], width, bottom=bar_data['new'],
-                label='Reused (tested in previous fold)', color='#e74c3c', alpha=0.8)
+                label='Reused (tested in previous partition)', color='#e74c3c', alpha=0.8)
 
 # Add value labels on bars
 for i, (new, reused) in enumerate(zip(bar_data['new'], bar_data['reused'])):
@@ -63,7 +70,7 @@ for i, (new, reused) in enumerate(zip(bar_data['new'], bar_data['reused'])):
 ax1.set_xlabel('Partition', fontsize=12)
 ax1.set_ylabel('Number of Subjects', fontsize=12)
 ax1.set_xticks(x)
-ax1.set_xticklabels([f'Partition {i+1}' for i in range(len(FOLDS))])
+ax1.set_xticklabels([f'Partition {i+1}' for i in range(len(partition_paths))])
 ax1.legend(fontsize=11, loc='upper right')
 ax1.grid(axis='y', alpha=0.3)
 ax1.set_ylim(0, max([sum(x) for x in zip(bar_data['new'], bar_data['reused'])]) * 1.15)
@@ -72,11 +79,11 @@ ax1.set_ylim(0, max([sum(x) for x in zip(bar_data['new'], bar_data['reused'])]) 
 ax2.set_title('Test set overlap between partitions (IoU)', 
               fontsize=14, fontweight='bold', pad=20)
 
-n_folds = len(test_subjects)
-overlap_matrix = np.zeros((n_folds, n_folds))
+n_partitions = len(test_subjects)
+overlap_matrix = np.zeros((n_partitions, n_partitions))
 
-for i in range(n_folds):
-    for j in range(n_folds):
+for i in range(n_partitions):
+    for j in range(n_partitions):
         if i != j:
             intersection = len(test_subjects[i] & test_subjects[j])
             union = len(test_subjects[i] | test_subjects[j])
@@ -85,8 +92,8 @@ for i in range(n_folds):
 im = ax2.imshow(overlap_matrix, cmap='RdYlGn_r', vmin=0, vmax=1, aspect='auto')
 
 # Add text annotations
-for i in range(n_folds):
-    for j in range(n_folds):
+for i in range(n_partitions):
+    for j in range(n_partitions):
         if i != j:
             text = ax2.text(j, i, f'{overlap_matrix[i, j]:.2f}',
                           ha="center", va="center", color="black", fontweight='bold')
@@ -94,10 +101,10 @@ for i in range(n_folds):
             ax2.text(j, i, '—', ha="center", va="center", 
                     color="gray", fontsize=16)
 
-ax2.set_xticks(np.arange(n_folds))
-ax2.set_yticks(np.arange(n_folds))
-ax2.set_xticklabels([f'Partition {i+1}' for i in range(n_folds)])
-ax2.set_yticklabels([f'Partition {i+1}' for i in range(n_folds)])
+ax2.set_xticks(np.arange(n_partitions))
+ax2.set_yticks(np.arange(n_partitions))
+ax2.set_xticklabels([f'Partition {i+1}' for i in range(n_partitions)])
+ax2.set_yticklabels([f'Partition {i+1}' for i in range(n_partitions)])
 ax2.set_xlabel('Partition', fontsize=12)
 ax2.set_ylabel('Partition', fontsize=12)
 
@@ -129,9 +136,9 @@ for i, test_set in enumerate(test_subjects):
 
 print(f"\n" + "="*70)
 print(f"TOTAL unique subjects ever tested: {len(all_tested_cumulative)}")
-print(f"Total subjects in dataset: {len(set().union(*[set(df['subject'].values) for df in fold_dfs]))}")
+print(f"Total subjects in dataset: {len(set().union(*[set(df['subject'].values) for df in partition_dfs]))}")
 
-coverage = len(all_tested_cumulative) / len(set().union(*[set(df['subject'].values) for df in fold_dfs]))
+coverage = len(all_tested_cumulative) / len(set().union(*[set(df['subject'].values) for df in partition_dfs]))
 print(f"Test coverage: {100*coverage:.1f}% of all subjects are tested at least once")
 print("="*70)
 
@@ -147,7 +154,7 @@ if avg_overlap > 0.3:
     print("\n⚠️  WARNING: High overlap detected! Partitions may not be diverse enough.")
     print("   Consider regenerating with lower --max_overlap parameter.")
 elif avg_overlap < 0.15:
-    print("\n✓ Good diversity! Test sets have minimal overlap across folds.")
+    print("\n✓ Good diversity! Test sets have minimal overlap across partitions.")
 else:
     print("\n✓ Moderate diversity. Overlap is acceptable.")
 

@@ -1,56 +1,64 @@
-import pandas as pd
-import plotly.graph_objects as go
+import argparse
 from pathlib import Path
 
-FOLDS = [
-    Path("folds_diverse/fold1_subjects.csv"),
-    Path("folds_diverse/fold2_subjects.csv"),
-    Path("folds_diverse/fold3_subjects.csv"),
-    Path("folds_diverse/fold4_subjects.csv"),
+import pandas as pd
+import plotly.graph_objects as go
+
+parser = argparse.ArgumentParser()
+parser.add_argument("partition_dir", type=Path)
+parser.add_argument("partition_count", type=int)
+args = parser.parse_args()
+PARTITIONS_COUNT = args.partition_count
+PARTITION_DIR = args.partition_dir
+print(f"Looking for {PARTITIONS_COUNT} partitions in `{PARTITION_DIR}`")
+partition_paths = [
+    PARTITION_DIR / f"partition{partition + 1}.csv"
+    for partition in range(PARTITIONS_COUNT)
 ]
 
-# Load all fold data
-fold_dfs = [pd.read_csv(fold) for fold in FOLDS]
 
-# Create nodes: each fold has 3 nodes (train, val, test)
+# Load all partition data
+partition_dfs = [pd.read_csv(partition) for partition in partition_paths]
+
+# Create nodes: each partition has 3 nodes (train, val, test)
 node_labels = []
 node_colors = []
 split_colors = {'train': 'rgba(255, 99, 71, 0.8)', 
                 'val': 'rgba(50, 205, 50, 0.8)', 
                 'test': 'rgba(65, 105, 225, 0.8)'}
 
-for i in range(len(FOLDS)):
+for i in range(len(partition_paths)):
     for split in ['train', 'val', 'test']:
-        node_labels.append(f"Fold {i+1}\n{split.capitalize()}")
+        node_labels.append(f"Partition {i+1}\n{split.capitalize()}")
         node_colors.append(split_colors[split])
 
-# Create mapping: node index = fold_idx * 3 + split_idx
-def get_node_idx(fold_idx, split):
+# Create mapping: node index = partition_idx * 3 + split_idx
+def get_node_idx(partition_idx, split):
     split_map = {'train': 0, 'val': 1, 'test': 2}
-    return fold_idx * 3 + split_map[split]
+    return partition_idx * 3 + split_map[split]
 
-# Build links between consecutive folds
+# Build links between consecutive partitions
 sources = []
 targets = []
 values = []
 link_colors = []
 
-for fold_idx in range(len(FOLDS) - 1):
-    df_current = fold_dfs[fold_idx]
-    df_next = fold_dfs[fold_idx + 1]
+for partition_idx in range(len(partition_paths) - 1):
+    df_current = partition_dfs[partition_idx]
+    df_next = partition_dfs[partition_idx + 1]
     
-    # For each subject, track where it goes from current fold to next fold
+    # For each subject, track where it goes from current partition to next partition
     for _, row_curr in df_current.iterrows():
         subject = row_curr['subject']
         split_curr = row_curr['split']
         
-        # Find where this subject is in the next fold
+        # Find where this subject is in the next partition
         row_next = df_next[df_next['subject'] == subject]
         if len(row_next) > 0:
             split_next = row_next.iloc[0]['split']
             
-            source_idx = get_node_idx(fold_idx, split_curr)
-            target_idx = get_node_idx(fold_idx + 1, split_next)
+            source_idx = get_node_idx(partition_idx, split_curr)
+            target_idx = get_node_idx(partition_idx + 1, split_next)
             
             sources.append(source_idx)
             targets.append(target_idx)
@@ -77,7 +85,7 @@ fig = go.Figure(data=[go.Sankey(
 )])
 
 fig.update_layout(
-    title="Subject Flow Across Folds<br><sub>Each line represents one subject moving between train/val/test splits</sub>",
+    title="Subject Flow Across Partitions<br><sub>Each line represents one subject moving between train/val/test splits</sub>",
     font=dict(size=12, family="Arial"),
     height=800,
     width=1400,
@@ -88,11 +96,11 @@ fig.show()
 # Print some statistics about subject movement
 print("\nSubject Movement Statistics:")
 print("=" * 50)
-for fold_idx in range(len(FOLDS) - 1):
-    df_current = fold_dfs[fold_idx]
-    df_next = fold_dfs[fold_idx + 1]
+for partition_idx in range(len(partition_paths) - 1):
+    df_current = partition_dfs[partition_idx]
+    df_next = partition_dfs[partition_idx + 1]
     
-    print(f"\nFold {fold_idx + 1} → Fold {fold_idx + 2}:")
+    print(f"\nPartition {partition_idx + 1} → Partition {partition_idx + 2}:")
     
     for split_from in ['train', 'val', 'test']:
         subjects_from = set(df_current[df_current['split'] == split_from]['subject'])
