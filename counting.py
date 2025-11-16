@@ -6,27 +6,28 @@ CLS_UNSTABLE = 1
 CLS_SARCOPENIA = 1
 CLS_NORMAL = 2
 
-VIDEO_PATH = Path("/Users/aldo/Code/avlab/dataset/stable_unstable_ver2")
-STABLE_PATH = VIDEO_PATH / "stable"
-UNSTABLE_PATH = VIDEO_PATH / "unstable"
-samples_paths = list(STABLE_PATH.iterdir()) + list(UNSTABLE_PATH.iterdir())
+VIDEO_PATH = Path("/Users/aldo/Code/avlab/dataset/all_ver2")
+samples_paths = list(VIDEO_PATH.iterdir())
+samples_paths.sort()
 
 data = []
 for path in samples_paths:
     parts = path.stem.split("_")
-    class_stable_unstable = int(parts[0])
-    subject = int(parts[1][:-2])
-    class_sarcopenia_normal = int(parts[2])
-
-    if class_stable_unstable == CLS_STABLE:
-        label_stable_unstable = "stable"
-    if class_stable_unstable == CLS_UNSTABLE:
-        label_stable_unstable = "unstable"
+    # print(parts)
+    class_sarcopenia_normal = int(parts[0])
+    subject = int(parts[1])
+    # _length = parts[2]
+    class_stable_unstable = int(parts[3])
 
     if class_sarcopenia_normal == CLS_SARCOPENIA:
         label_sarcopenia_normal = "sarcopenia"
     if class_sarcopenia_normal == CLS_NORMAL:
         label_sarcopenia_normal = "normal"
+
+    if class_stable_unstable == CLS_STABLE:
+        label_stable_unstable = "stable"
+    if class_stable_unstable == CLS_UNSTABLE:
+        label_stable_unstable = "unstable"
 
     full_path = path.name
     data.append((subject, label_stable_unstable, label_sarcopenia_normal, full_path))
@@ -35,6 +36,7 @@ df = pd.DataFrame(data, columns=["subject", "stable-unstable", "sarcopenia-norma
 
 df["original_subject_idx"] = df["subject"]
 df.loc[df["sarcopenia-normal"] == "sarcopenia", "subject"] += 1000
+# df['subject'] = df.index
 df.to_csv("csvs/clips.csv")
     
 # Collapse clips into subjects

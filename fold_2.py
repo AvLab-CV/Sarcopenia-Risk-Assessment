@@ -53,7 +53,20 @@ def greedy_partition(subjects, subj_stats, desired, rng):
         current[best_split]["unstable"] += s_un
     return assign, current
 
-def make_splits(subj_stats, p=(0.7,0.1,0.2), folds=5, max_attempts=200, seed=1234):
+def compute_overlap(assign1, assign2, split1='test', split2='test'):
+    """Compute overlap between two assignments for given splits"""
+    set1 = {s for s, split in assign1.items() if split == split1}
+    set2 = {s for s, split in assign2.items() if split == split2}
+    if len(set1) == 0 or len(set2) == 0:
+        return 0.0
+    return len(set1 & set2) / len(set1 | set2)
+
+def make_diverse_splits(subj_stats, p=(0.7,0.1,0.2), folds=5, max_attempts=500, 
+                        max_overlap=0.15, seed=1234):
+    """
+    Create folds with explicitly diverse test/val sets.
+    max_overlap: maximum Jaccard similarity allowed between test sets of different folds
+    """
     all_subjs = list(subj_stats.keys())
     total_stable = sum(v["stable"] for v in subj_stats.values())
     total_unstable = sum(v["unstable"] for v in subj_stats.values())
@@ -62,32 +75,70 @@ def make_splits(subj_stats, p=(0.7,0.1,0.2), folds=5, max_attempts=200, seed=123
     rng = random.Random(seed)
 
     fold_results = []
+    previous_folds = []  # Store previous fold assignments
 
     for f in range(folds):
+        print(f"\nSearching for fold {f+1}...")
         best_attempt = None
-        best_error = None
-        # vary seed per fold to avoid identical folds
+        best_score = None
+        attempts_made = 0
+        
         for attempt in range(max_attempts):
+            attempts_made += 1
             subj_order = all_subjs[:] 
             rng.shuffle(subj_order)
             assign, current = greedy_partition(subj_order, subj_stats, desired, rng)
-            # compute total L1 error
-            error = 0.0
+            
+            # Compute balance error (L1)
+            balance_error = 0.0
             for k in desired:
-                error += abs(current[k]["stable"] - desired[k]["stable"]) + abs(current[k]["unstable"] - desired[k]["unstable"])
-            if best_error is None or error < best_error:
-                best_error = error
-                best_attempt = (assign.copy(), {k:current[k].copy() for k in current})
-            # early exit if pretty good
-            if error <= 0.05 * (total_stable + total_unstable):  # 5% of total clips
+                balance_error += abs(current[k]["stable"] - desired[k]["stable"]) + abs(current[k]["unstable"] - desired[k]["unstable"])
+            
+            # Compute diversity penalty: overlap with previous folds
+            diversity_penalty = 0.0
+            max_test_overlap = 0.0
+            max_val_overlap = 0.0
+            
+            if previous_folds:
+                for prev_assign in previous_folds:
+                    test_overlap = compute_overlap(assign, prev_assign, 'test', 'test')
+                    val_overlap = compute_overlap(assign, prev_assign, 'val', 'val')
+                    max_test_overlap = max(max_test_overlap, test_overlap)
+                    max_val_overlap = max(max_val_overlap, val_overlap)
+                    # Heavy penalty for overlapping test/val sets
+                    diversity_penalty += test_overlap * 1000.0  # Very high weight
+                    diversity_penalty += val_overlap * 500.0    # High weight
+            
+            # Combined score: balance error + diversity penalty
+            total_clips = total_stable + total_unstable
+            normalized_balance = balance_error / total_clips
+            score = normalized_balance + diversity_penalty
+            
+            if best_score is None or score < best_score:
+                best_score = score
+                best_attempt = (assign.copy(), {k:current[k].copy() for k in current}, 
+                               max_test_overlap, max_val_overlap, normalized_balance)
+            
+            # Early exit if we found a good diverse solution
+            if max_test_overlap <= max_overlap and max_val_overlap <= max_overlap and normalized_balance <= 0.05:
+                print(f"  Found good solution at attempt {attempts_made}")
                 break
-            # shuffle seed a bit
-            rng.seed(seed + f*1000 + attempt + rng.randint(0,99999))
-        # finalize fold f
-        assign, current = best_attempt
-        # summary
+            
+            # Vary seed
+            if attempt % 50 == 0 and attempt > 0:
+                print(f"  Attempt {attempt}: best test_overlap={max_test_overlap:.3f}, val_overlap={max_val_overlap:.3f}")
+            rng.seed(seed + f*10000 + attempt + rng.randint(0,99999))
+        
+        # Finalize fold f
+        assign, current, test_overlap, val_overlap, balance = best_attempt
+        print(f"  Final: test_overlap={test_overlap:.3f}, val_overlap={val_overlap:.3f}, balance={balance:.3f}")
+        
+        previous_folds.append(assign)
+        
+        # Summary
         sums = summarize_assign(assign, subj_stats)
         fold_results.append({"assign": assign, "summary": sums})
+    
     return fold_results, desired
 
 def main():
@@ -97,17 +148,20 @@ def main():
     parser.add_argument("--p_train", type=float, default=0.7)
     parser.add_argument("--p_val", type=float, default=0.1)
     parser.add_argument("--p_test", type=float, default=0.2)
-    parser.add_argument("--max_attempts", type=int, default=300)
+    parser.add_argument("--max_attempts", type=int, default=500)
+    parser.add_argument("--max_overlap", type=float, default=0.15, 
+                       help="Maximum allowed Jaccard overlap between test sets (0-1)")
     parser.add_argument("--seed", type=int, default=1234)
-    OUT_DIR = "folds"
+    parser.add_argument("--out_dir", type=str, default="folds_diverse")
+    args = parser.parse_args()
+
+    OUT_DIR = args.out_dir
 
     if os.path.exists(OUT_DIR):
         print(f"Output directory {OUT_DIR} already exists.")
         print("Aborting for safety.")
         exit(1)
         return
-
-    args = parser.parse_args()
 
     df = pd.read_csv(args.csv)
     # build subj_stats
@@ -116,11 +170,12 @@ def main():
     for _, r in grouped.iterrows():
         subj_stats[int(r["subject"])] = {"stable": int(r["stable"]), "unstable": int(r["unstable"])}
 
-    folds_data, desired = make_splits(subj_stats,
-                                      p=(args.p_train, args.p_val, args.p_test),
-                                      folds=args.folds,
-                                      max_attempts=args.max_attempts,
-                                      seed=args.seed)
+    folds_data, desired = make_diverse_splits(subj_stats,
+                                              p=(args.p_train, args.p_val, args.p_test),
+                                              folds=args.folds,
+                                              max_attempts=args.max_attempts,
+                                              max_overlap=args.max_overlap,
+                                              seed=args.seed)
 
     # print global totals & desired
     total_stable = sum(v["stable"] for v in subj_stats.values())
@@ -131,8 +186,8 @@ def main():
     for k in ("train","val","test"):
         print(f" {k:5} -> stable~{desired[k]['stable']:.1f} unstable~{desired[k]['unstable']:.1f}")
 
-    os.makedirs("folds")
-    print("Created directory folds")
+    os.makedirs(OUT_DIR)
+    print(f"\nCreated directory {OUT_DIR}")
 
     # write per-fold results and print summaries
     train_sets = []
@@ -154,13 +209,12 @@ def main():
                     "clip_count": subj_stats[subject]["stable"] + subj_stats[subject]["unstable"],
                     "stable": subj_stats[subject]["stable"],
                     "unstable": subj_stats[subject]["unstable"],
-                    # "path": df[df["subject"] == subject]["path"].iloc[0],
                 }
                 for subject in sorted(assign.keys())
             ]
         )
         out_fn = f"{OUT_DIR}/fold{i+1}_subjects.csv"
-        out.to_csv(out_fn)
+        out.to_csv(out_fn, index=False)
         print(f"  -> wrote {out_fn}")
         
         # collect sets for cross-fold comparison
@@ -173,18 +227,37 @@ def main():
         print(f"  test subjects ({len(test_subs)}): {test_subs}")
         print(f"  val  subjects ({len(val_subs)}): {val_subs}")       
 
-    sim_matrix = np.zeros((len(test_sets), len(test_sets)))
+    # Compute overlap matrices
+    print("\n" + "="*60)
+    print("TEST SET OVERLAP MATRIX (Jaccard similarity)")
+    print("="*60)
+    test_matrix = np.zeros((len(test_sets), len(test_sets)))
     for i in range(len(test_sets)):
-        for j in range(i+1, len(test_sets)):
-            similarity = len(test_sets[i] & test_sets[j]) / len(test_sets[i] | test_sets[j])
-            sim_matrix[i,j] = similarity
+        for j in range(len(test_sets)):
+            if i != j:
+                similarity = len(test_sets[i] & test_sets[j]) / len(test_sets[i] | test_sets[j])
+                test_matrix[i,j] = similarity
+    print(test_matrix)
+    print(f"\nAverage test set overlap: {np.mean(test_matrix[test_matrix > 0]):.3f}")
+    print(f"Max test set overlap: {np.max(test_matrix):.3f}")
 
-    print()
-    print("Test-set similarity matrix")
-    print(sim_matrix)
-    print()
+    print("\n" + "="*60)
+    print("VAL SET OVERLAP MATRIX (Jaccard similarity)")
+    print("="*60)
+    val_matrix = np.zeros((len(val_sets), len(val_sets)))
+    for i in range(len(val_sets)):
+        for j in range(len(val_sets)):
+            if i != j:
+                similarity = len(val_sets[i] & val_sets[j]) / len(val_sets[i] | val_sets[j])
+                val_matrix[i,j] = similarity
+    print(val_matrix)
+    print(f"\nAverage val set overlap: {np.mean(val_matrix[val_matrix > 0]):.3f}")
+    print(f"Max val set overlap: {np.max(val_matrix):.3f}")
 
-    # check overlap of test and val inside each fold (should be disjoint)
+    # check overlap within each fold (should be disjoint)
+    print("\n" + "="*60)
+    print("CHECKING WITHIN-FOLD OVERLAPS (should all be empty)")
+    print("="*60)
     for i, (train_set, test_set, val_set) in enumerate(zip(train_sets, test_sets, val_sets)):
         inter1 = train_set & val_set
         inter2 = train_set & test_set
@@ -196,8 +269,12 @@ def main():
             print(f"ERROR: fold {i+1} has overlap between train and test subjects: {sorted(inter2)}")
         if inter3:
             print(f"ERROR: fold {i+1} has overlap between test and val subjects: {sorted(inter3)}")
-
-    print("For better results, try increasing --max_attempts or changing --seed.")
+    
+    print("\n" + "="*60)
+    print(f"If overlap is too high, try:")
+    print(f"  - Increasing --max_attempts (current: {args.max_attempts})")
+    print(f"  - Decreasing --max_overlap (current: {args.max_overlap})")
+    print(f"  - Changing --seed (current: {args.seed})")
 
 if __name__ == "__main__":
     main()

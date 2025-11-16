@@ -1,0 +1,195 @@
+folds/fold1_subjects.csv:
+train: 103 subjects (72.54% of all dataset), 
+         22 sarcopenia subjects (21.36%), 81 normal subjects (78.64%)  (% of all subjects in 'train')
+         86 unstable clips (26.88%), 234 stable clips (73.12%) (% of all clips in 'train')
+
+val: 15 subjects (10.56% of all dataset), 
+         1 sarcopenia subjects (6.67%), 14 normal subjects (93.33%)  (% of all subjects in 'val')
+         13 unstable clips (27.66%), 34 stable clips (72.34%) (% of all clips in 'val')
+
+test: 24 subjects (16.90% of all dataset), 
+         8 sarcopenia subjects (33.33%), 16 normal subjects (66.67%)  (% of all subjects in 'test')
+         24 unstable clips (26.37%), 67 stable clips (73.63%) (% of all clips in 'test')
+
+folds/fold2_subjects.csv:
+train: 99 subjects (69.72% of all dataset), 
+         22 sarcopenia subjects (22.22%), 77 normal subjects (77.78%)  (% of all subjects in 'train')
+         86 unstable clips (26.88%), 234 stable clips (73.12%) (% of all clips in 'train')
+
+val: 13 subjects (9.15% of all dataset), 
+         3 sarcopenia subjects (23.08%), 10 normal subjects (76.92%)  (% of all subjects in 'val')
+         12 unstable clips (26.67%), 33 stable clips (73.33%) (% of all clips in 'val')
+
+test: 30 subjects (21.13% of all dataset), 
+         6 sarcopenia subjects (20.00%), 24 normal subjects (80.00%)  (% of all subjects in 'test')
+         25 unstable clips (26.88%), 68 stable clips (73.12%) (% of all clips in 'test')
+
+folds/fold3_subjects.csv:
+train: 99 subjects (69.72% of all dataset), 
+         20 sarcopenia subjects (20.20%), 79 normal subjects (79.80%)  (% of all subjects in 'train')
+         86 unstable clips (26.88%), 234 stable clips (73.12%) (% of all clips in 'train')
+
+val: 16 subjects (11.27% of all dataset), 
+         2 sarcopenia subjects (12.50%), 14 normal subjects (87.50%)  (% of all subjects in 'val')
+         11 unstable clips (25.00%), 33 stable clips (75.00%) (% of all clips in 'val')
+
+test: 27 subjects (19.01% of all dataset), 
+         9 sarcopenia subjects (33.33%), 18 normal subjects (66.67%)  (% of all subjects in 'test')
+         26 unstable clips (27.66%), 68 stable clips (72.34%) (% of all clips in 'test')
+
+folds/fold4_subjects.csv:
+train: 101 subjects (71.13% of all dataset), 
+         20 sarcopenia subjects (19.80%), 81 normal subjects (80.20%)  (% of all subjects in 'train')
+         86 unstable clips (26.88%), 234 stable clips (73.12%) (% of all clips in 'train')
+
+val: 12 subjects (8.45% of all dataset), 
+         3 sarcopenia subjects (25.00%), 9 normal subjects (75.00%)  (% of all subjects in 'val')
+         12 unstable clips (26.67%), 33 stable clips (73.33%) (% of all clips in 'val')
+
+test: 29 subjects (20.42% of all dataset), 
+         8 sarcopenia subjects (27.59%), 21 normal subjects (72.41%)  (% of all subjects in 'test')
+         25 unstable clips (26.88%), 68 stable clips (73.12%) (% of all clips in 'test')
+
+Per-id information (original IDs)
+normal_1: 3 clips
+normal_2: 4 clips
+normal_3: 5 clips
+normal_4: 3 clips
+normal_6: 2 clips
+normal_7: 4 clips
+normal_9: 4 clips
+normal_10: 5 clips
+normal_11: 2 clips
+normal_12: 2 clips
+normal_14: 4 clips
+normal_15: 2 clips
+normal_16: 3 clips
+normal_17: 1 clips
+normal_18: 6 clips
+normal_19: 4 clips
+normal_20: 4 clips
+normal_21: 1 clips
+normal_22: 3 clips
+normal_24: 2 clips
+normal_26: 4 clips
+normal_28: 3 clips
+normal_29: 1 clips
+normal_31: 3 clips
+normal_34: 3 clips
+normal_36: 2 clips
+normal_37: 1 clips
+normal_38: 2 clips
+normal_39: 3 clips
+normal_40: 2 clips
+normal_41: 2 clips
+normal_43: 3 clips
+normal_45: 2 clips
+normal_46: 1 clips
+normal_48: 4 clips
+normal_49: 6 clips
+normal_50: 2 clips
+normal_51: 3 clips
+normal_52: 3 clips
+normal_53: 5 clips
+normal_54: 2 clips
+normal_55: 4 clips
+normal_56: 5 clips
+normal_57: 2 clips
+normal_58: 5 clips
+normal_59: 2 clips
+normal_60: 5 clips
+normal_61: 1 clips
+normal_62: 5 clips
+normal_63: 4 clips
+normal_64: 3 clips
+normal_65: 5 clips
+normal_66: 6 clips
+normal_67: 2 clips
+normal_68: 6 clips
+normal_69: 3 clips
+normal_70: 2 clips
+normal_71: 4 clips
+normal_72: 3 clips
+normal_73: 2 clips
+normal_75: 3 clips
+normal_76: 3 clips
+normal_78: 3 clips
+normal_79: 4 clips
+normal_83: 2 clips
+normal_84: 3 clips
+normal_86: 3 clips
+normal_87: 2 clips
+normal_88: 2 clips
+normal_89: 3 clips
+normal_90: 2 clips
+normal_91: 4 clips
+normal_92: 1 clips
+normal_94: 3 clips
+normal_95: 1 clips
+normal_97: 2 clips
+normal_100: 4 clips
+normal_102: 2 clips
+normal_103: 2 clips
+normal_104: 1 clips
+normal_105: 1 clips
+normal_106: 2 clips
+normal_107: 2 clips
+normal_108: 3 clips
+normal_109: 4 clips
+normal_111: 2 clips
+normal_112: 4 clips
+normal_113: 1 clips
+normal_114: 4 clips
+normal_115: 1 clips
+normal_116: 5 clips
+normal_117: 2 clips
+normal_118: 6 clips
+normal_119: 2 clips
+normal_120: 3 clips
+normal_121: 5 clips
+normal_122: 5 clips
+normal_123: 2 clips
+normal_124: 8 clips
+normal_125: 6 clips
+normal_126: 4 clips
+normal_127: 5 clips
+normal_128: 10 clips
+normal_129: 4 clips
+normal_130: 1 clips
+normal_131: 5 clips
+normal_133: 4 clips
+normal_134: 7 clips
+normal_135: 6 clips
+normal_136: 1 clips
+normal_137: 3 clips
+sarcopenia_1: 2 clips
+sarcopenia_2: 3 clips
+sarcopenia_3: 3 clips
+sarcopenia_4: 4 clips
+sarcopenia_5: 2 clips
+sarcopenia_6: 5 clips
+sarcopenia_8: 2 clips
+sarcopenia_9: 2 clips
+sarcopenia_10: 2 clips
+sarcopenia_11: 3 clips
+sarcopenia_13: 2 clips
+sarcopenia_14: 4 clips
+sarcopenia_15: 5 clips
+sarcopenia_16: 3 clips
+sarcopenia_17: 3 clips
+sarcopenia_18: 4 clips
+sarcopenia_19: 1 clips
+sarcopenia_21: 6 clips
+sarcopenia_22: 1 clips
+sarcopenia_23: 5 clips
+sarcopenia_24: 2 clips
+sarcopenia_25: 5 clips
+sarcopenia_26: 4 clips
+sarcopenia_27: 2 clips
+sarcopenia_28: 5 clips
+sarcopenia_29: 3 clips
+sarcopenia_30: 3 clips
+sarcopenia_31: 2 clips
+sarcopenia_33: 5 clips
+sarcopenia_34: 4 clips
+sarcopenia_35: 3 clips

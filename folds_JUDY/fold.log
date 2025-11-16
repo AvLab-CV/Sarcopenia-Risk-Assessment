@@ -11,32 +11,32 @@ FOLD 1/4 summary:
   val   | subjects=15 | clips= 47 | stable:unstable=34:13 | stable%=0.72
   test  | subjects=24 | clips= 91 | stable:unstable=67:24 | stable%=0.74
   -> wrote folds/fold1_subjects.csv
-  test subjects (24): [2, 4, 9, 14, 28, 29, 35, 37, 39, 44, 45, 50, 86, 94, 102, 109, 111, 119, 122, 128, 130, 133, 137, 141]
-  val  subjects (15): [10, 40, 46, 53, 56, 57, 58, 59, 61, 62, 73, 82, 88, 110, 116]
+  test subjects (24): [3, 6, 12, 18, 39, 40, 49, 51, 53, 58, 59, 64, 112, 120, 128, 136, 1001, 1010, 1014, 1021, 1023, 1026, 1030, 1035]
+  val  subjects (15): [14, 54, 60, 67, 70, 71, 72, 73, 76, 78, 94, 107, 114, 137, 1006]
 
 FOLD 2/4 summary:
   train | subjects=99 | clips=320 | stable:unstable=234:86 | stable%=0.73
   val   | subjects=13 | clips= 45 | stable:unstable=33:12 | stable%=0.73
   test  | subjects=30 | clips= 93 | stable:unstable=68:25 | stable%=0.73
   -> wrote folds/fold2_subjects.csv
-  test subjects (30): [0, 3, 7, 13, 22, 28, 36, 40, 43, 45, 62, 63, 64, 77, 80, 82, 83, 84, 89, 98, 99, 106, 109, 110, 128, 132, 133, 135, 138, 141]
-  val  subjects (13): [12, 16, 42, 51, 58, 73, 78, 92, 93, 105, 118, 119, 125]
+  test subjects (30): [1, 4, 10, 17, 29, 39, 50, 54, 57, 59, 78, 79, 83, 102, 105, 107, 108, 109, 115, 124, 125, 133, 136, 137, 1021, 1025, 1026, 1028, 1031, 1035]
+  val  subjects (13): [16, 20, 56, 65, 72, 94, 103, 118, 119, 131, 1009, 1010, 1017]
 
 FOLD 3/4 summary:
   train | subjects=99 | clips=320 | stable:unstable=234:86 | stable%=0.73
   val   | subjects=16 | clips= 44 | stable:unstable=33:11 | stable%=0.75
   test  | subjects=27 | clips= 94 | stable:unstable=68:26 | stable%=0.72
   -> wrote folds/fold3_subjects.csv
-  test subjects (27): [13, 21, 31, 41, 42, 51, 54, 56, 57, 64, 70, 80, 84, 89, 97, 99, 103, 110, 113, 114, 115, 116, 119, 122, 128, 132, 135]
-  val  subjects (16): [15, 19, 20, 22, 28, 32, 34, 37, 38, 53, 73, 88, 105, 109, 129, 131]
+  test subjects (27): [17, 28, 43, 55, 56, 65, 68, 70, 71, 83, 90, 105, 109, 115, 123, 125, 129, 137, 1003, 1004, 1005, 1006, 1010, 1014, 1021, 1025, 1028]
+  val  subjects (16): [19, 24, 26, 29, 39, 45, 48, 51, 52, 67, 94, 114, 131, 136, 1022, 1024]
 
 FOLD 4/4 summary:
   train | subjects=101 | clips=320 | stable:unstable=234:86 | stable%=0.73
   val   | subjects=12 | clips= 45 | stable:unstable=33:12 | stable%=0.73
   test  | subjects=29 | clips= 93 | stable:unstable=68:25 | stable%=0.73
   -> wrote folds/fold4_subjects.csv
-  test subjects (29): [0, 7, 12, 13, 18, 21, 23, 28, 30, 35, 39, 49, 50, 56, 61, 64, 66, 88, 89, 91, 101, 111, 112, 121, 126, 130, 136, 137, 139]
-  val  subjects (12): [6, 42, 54, 63, 74, 83, 87, 92, 103, 119, 122, 135]
+  test subjects (29): [1, 10, 16, 17, 22, 28, 31, 39, 41, 49, 53, 63, 64, 70, 76, 83, 86, 114, 115, 117, 127, 1001, 1002, 1013, 1018, 1023, 1029, 1030, 1033]
+  val  subjects (12): [9, 56, 68, 79, 95, 108, 113, 118, 129, 1010, 1014, 1028]
 
 Test-set similarity matrix
 [[0.         0.125      0.0625     0.15217391]
