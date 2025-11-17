@@ -13,7 +13,7 @@ PARTITIONS_COUNT = args.partition_count
 PARTITION_DIR = args.partition_dir
 print(f"Looking for {PARTITIONS_COUNT} partitions in `{PARTITION_DIR}`")
 partition_paths = [
-    PARTITION_DIR / f"partition{partition + 1}.csv"
+    PARTITION_DIR / f"partition{partition}.csv"
     for partition in range(PARTITIONS_COUNT)
 ]
 
@@ -113,6 +113,7 @@ cbar = plt.colorbar(im, ax=ax2)
 cbar.set_label('Overlap (0=no overlap, 1=identical)', rotation=270, labelpad=20)
 
 plt.tight_layout()
+plt.savefig("reuse.png")
 
 # ============= Print Statistics =============
 print("\n" + "="*70)
