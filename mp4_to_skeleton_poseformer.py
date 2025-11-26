@@ -16,22 +16,20 @@ from lib.hrnet.gen_kpts import gen_video_kpts as hrnet_pose
 os.environ['PYOPENGL_PLATFORM'] = 'egl'
 os.environ['EGL_PLATFORM'] = 'surfaceless'
 
-VIDEO_PATH = Path("/media/Eason/TMU_dataset/stable_usntable/")
-STABLE_PATH = VIDEO_PATH / "stable"
-UNSTABLE_PATH = VIDEO_PATH / "unstable"
-VIDEOS = list(STABLE_PATH.iterdir()) + list(UNSTABLE_PATH.iterdir())
+VIDEO_PATH = Path("/Users/aldo/Code/avlab/dataset/all_124_nosub1")
+VIDEOS = list(VIDEO_PATH.iterdir())
 
-os.makedirs("output2")
-SKELETON_OUTPUT_PATH          = "output2/NEW_video_skel.pkl"
-SARCOPENIA_LABELS_OUTPUT_PATH = "output2/NEW_sarcopenia_labels.txt"
-UNSTABLE_LABELS_OUTPUT_PATH   = "output2/NEW_unstable_labels.txt"
-PATHS_OUTPUT_PATH             = "output2/NEW_paths.txt"
-SUBJECT_OUTPUT_PATH           = "output2/NEW_subjects.txt"
+os.makedirs("output/output3", exist_ok=True)
+SKELETON_OUTPUT_PATH          = "output/output3/NEW_video_skel.pkl"
+SARCOPENIA_LABELS_OUTPUT_PATH = "output/output3/NEW_sarcopenia_labels.txt"
+UNSTABLE_LABELS_OUTPUT_PATH   = "output/output3/NEW_unstable_labels.txt"
+PATHS_OUTPUT_PATH             = "output/output3/NEW_paths.txt"
+SUBJECT_OUTPUT_PATH           = "output/output3/NEW_subjects.txt"
 MEDIAPIPE_MODEL_PATH          = "models/mediapipe/pose_landmarker_heavy.task"
 
-# DEBUG
-VIDEOS = VIDEOS[:3]
-print (VIDEOS)
+# # DEBUG
+# VIDEOS = VIDEOS[:3]
+# print (VIDEOS)
 
 h36m_coco_order = [9, 11, 14, 12, 15, 13, 16, 4, 1, 5, 2, 6, 3]
 coco_order = [0, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
@@ -332,16 +330,18 @@ def main():
 
     for i, video_path in enumerate(tqdm(VIDEOS)):
         parts = video_path.stem.split("_")
-        label_stable_unstable = int(parts[0]) # 0 = stable/1 = unstable
-        subject = int(parts[1][:-2]) # there's a trailing "tg" for some reason, we trim it off here (thus the :-2)
-        label_sarcopenia_normal = int(parts[2]) # 0 = sarcopenia/1 = normal
+        # print(parts)
+        class_sarcopenia_normal = int(parts[0])
+        subject = int(parts[1])
+        # _length = parts[2]
+        class_stable_unstable = int(parts[3])
 
         try:
             arr = video_to_array(model, str(video_path))
             arr = arr.reshape(-1, 75)
             video_skel.append(arr)
-            sarcopenia_labels.append(label_sarcopenia_normal)
-            unstable_labels.append(label_stable_unstable)
+            sarcopenia_labels.append(class_sarcopenia_normal)
+            unstable_labels.append(class_stable_unstable)
             subjects.append(subject)
         except Exception as e:
             print(f"Skipping video idx={i}, Caught exception: {e}")

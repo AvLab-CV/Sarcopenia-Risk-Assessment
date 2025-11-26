@@ -12,7 +12,7 @@ PARTITIONS_COUNT = args.partition_count
 PARTITION_DIR = args.partition_dir
 print(f"Looking for {PARTITIONS_COUNT} partitions in `{PARTITION_DIR}`")
 partition_paths = [
-    PARTITION_DIR / f"partition{partition + 1}.csv"
+    PARTITION_DIR / f"partition{partition}.csv"
     for partition in range(PARTITIONS_COUNT)
 ]
 

@@ -14,9 +14,9 @@ STRIDE = 8
 # if a window's unstable prob > this thresh, the clip is considered unstable
 UNSTABLE_WINDOW_THRESH = 0.5
 # if this fraction of this subject's windows is unstable, then we predict this subject to have sarcopenia
-UNSTABLE_WINDOWS_FRACTION_SARCOPENIA_THRESH = 0.5
+UNSTABLE_WINDOWS_FRACTION_SARCOPENIA_THRESH = 0.2
 
-df_original = pd.read_csv(f"./results/fold{FOLD}_sliding_window_windowsize{WINDOW_SIZE}_stride{STRIDE}.csv")
+df_original = pd.read_csv(f"./output/results/fold{FOLD}_sliding_window_windowsize{WINDOW_SIZE}_stride{STRIDE}.csv")
 df_original['predictions'] = df_original['predictions'].map(lambda x: np.fromstring(x.strip("[ ]"), sep=' '))
 largest_window = df_original['predictions'].map(lambda x: x.shape[0]).max()
 # position of the beginning window `i`
@@ -121,30 +121,39 @@ print(f"{UNSTABLE_WINDOWS_FRACTION_SARCOPENIA_THRESH=}")
 # We should show this. Actually, we should probably use the medical terms
 # instead of the CV terms.
 print(f"{acc=}")
-plot_cdf(
-    series=[
-        df.loc[df['subject_has_sarcopenia'] == 0, 'seq_len'],
-        df.loc[df['subject_has_sarcopenia'] == 1, 'seq_len'],
-    ],
-    labels=['Normal', 'Sarcopenia'],
-    colors=['green', 'purple'],
-    variable_label="Sequence length",
-).savefig(PLOT_OUT_DIR / "seq_len_cdf.pdf")
-plot_cdf(
-    series=[
-        df.loc[df['subject_has_sarcopenia'] == 0, 'unstable_fraction'],
-        df.loc[df['subject_has_sarcopenia'] == 1, 'unstable_fraction'],
-    ],
-    labels=['Normal', 'Sarcopenia'],
-    colors=['green', 'purple'],
-    variable_label="Instability rate",
-).savefig(PLOT_OUT_DIR / "instability_rate_cdf.pdf")
+# plot_cdf(
+#     series=[
+#         df.loc[df['subject_has_sarcopenia'] == 0, 'seq_len'],
+#         df.loc[df['subject_has_sarcopenia'] == 1, 'seq_len'],
+#     ],
+#     labels=['Normal', 'Sarcopenia'],
+#     colors=['green', 'purple'],
+#     variable_label="Sequence length",
+# ).savefig(PLOT_OUT_DIR / "seq_len_cdf.pdf")
+# plot_cdf(
+#     series=[
+#         df.loc[df['subject_has_sarcopenia'] == 0, 'unstable_fraction'],
+#         df.loc[df['subject_has_sarcopenia'] == 1, 'unstable_fraction'],
+#     ],
+#     labels=['Normal', 'Sarcopenia'],
+#     colors=['green', 'purple'],
+#     variable_label="Instability rate",
+# ).savefig(PLOT_OUT_DIR / "instability_rate_cdf.pdf")
 # plt.show()
 
-# print(f"normal_unstable_fraction     ~ {normal_unstable_fraction.mean()} += {normal_unstable_fraction.std()}")
-# print(f"sarcopenia_unstable_fraction ~ {sarcopenia_unstable_fraction.mean()} += {sarcopenia_unstable_fraction.std()}")
+print(df_original)
+normal_unstable_fraction =     df.loc[df['subject_has_sarcopenia'] == 0, 'unstable_fraction']
+sarcopenia_unstable_fraction = df.loc[df['subject_has_sarcopenia'] == 1, 'unstable_fraction']
+print(f"normal_unstable_fraction     ~ {normal_unstable_fraction.mean()} += {normal_unstable_fraction.std()}")
+print(f"sarcopenia_unstable_fraction ~ {sarcopenia_unstable_fraction.mean()} += {sarcopenia_unstable_fraction.std()}")
+# plot_sliding_window_all(df)
+#
 
-plot_sliding_window_all(df)
+print("CM:")
+print((~df['subject_has_sarcopenia'] & ~df['sarcopenia_predicted']).sum())
+print((df['subject_has_sarcopenia'] & ~df['sarcopenia_predicted']).sum())
+print((~df['subject_has_sarcopenia'] & df['sarcopenia_predicted']).sum())
+print((df['subject_has_sarcopenia'] & df['sarcopenia_predicted']).sum())
 
 # Perform a grid sweep to find the best threshold (overfits to the dataset)
 def sweep(SWEEP_I, SWEEP_J):

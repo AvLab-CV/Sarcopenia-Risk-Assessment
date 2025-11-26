@@ -117,25 +117,24 @@ def assign_subjects_to_partitions(
     """
     Assign subjects to partitions and splits.
     
-    Each partition is a complete partition of the dataset - each subject appears
-    exactly once per partition (in train, val, or test).
+    Each partition is a complete split of the dataset. Subjects can appear in
+    multiple partitions but only in one test set total (requirement 3).
     
     Strategy:
-    1. First assign test sets across partitions (no overlap - most important)
-    2. For each partition, assign validation sets from remaining subjects (minimize overlap)
-    3. For each partition, assign all remaining subjects to training
+    1. First assign test sets (no overlap - most important)
+    2. Then assign validation sets (minimize overlap)
+    3. Finally assign training sets (subjects can be train in multiple partitions)
     4. Balance clip counts and stable/unstable ratios
     """
     np.random.seed(random_seed)
     random.seed(random_seed)
     
     targets = calculate_targets(df, p_train, p_val, p_test)
-    target_unstable_ratio = targets['unstable_ratio']
     
-    # Create result dataframe - one row per subject per partition
+    # Create result dataframe - we'll have multiple rows per subject (one per partition)
     result_rows = []
     
-    # Get all subject indices
+    # Shuffle subjects for randomness
     subject_indices = df.index.tolist()
     np.random.shuffle(subject_indices)
     
@@ -156,11 +155,14 @@ def assign_subjects_to_partitions(
     partition_stable = {p: {'train': 0, 'val': 0, 'test': 0} for p in range(num_partitions)}
     partition_unstable = {p: {'train': 0, 'val': 0, 'test': 0} for p in range(num_partitions)}
     
-    # Track which subjects are in test sets (to ensure no overlap)
+    # Track which subjects are already in test/val sets (to avoid overlap)
     subjects_in_test = set()
+    subjects_in_val = set()
     
-    # PHASE 1: Assign test sets across partitions (no overlap - most important)
+    # PHASE 1: Assign test sets (no overlap - most important)
+    # Each partition needs target_test_clips, and no subject can be in multiple test sets
     test_target = targets['target_test_clips']
+    target_unstable_ratio = targets['unstable_ratio']
     
     # Collect all candidates for test sets
     all_test_candidates = []
@@ -175,7 +177,7 @@ def assign_subjects_to_partitions(
         current_test_stable = 0
         
         while current_test_clips < test_target * 0.98:
-            # Select best subject that maintains ratio and hasn't been assigned to test yet
+            # Select best subject that maintains ratio
             best_idx, best_stable, best_unstable, best_clips = select_best_subject_for_ratio(
                 all_test_candidates,
                 current_test_stable,
@@ -200,37 +202,26 @@ def assign_subjects_to_partitions(
             if current_test_clips >= test_target:
                 break
     
-    # PHASE 2 & 3: For each partition, assign val and train from remaining subjects
+    # PHASE 2: Assign validation sets (minimize overlap)
     val_target = targets['target_val_clips']
-    train_target = targets['target_train_clips']
     
-    # Track which subjects are in validation sets across partitions (to minimize overlap)
-    subjects_in_val = {p: set() for p in range(num_partitions)}
+    # Collect candidates for validation (not in test)
+    val_candidates = [idx for idx in subject_indices if idx not in subjects_in_test]
+    np.random.shuffle(val_candidates)
     
     for partition in range(num_partitions):
-        # Get subjects already in test for this partition
-        test_subjects_this_partition = set(partition_assignments[partition]['test'])
-        
-        # Remaining subjects for this partition (all subjects not in test for this partition)
-        remaining_subjects = [idx for idx in subject_indices if idx not in test_subjects_this_partition]
-        np.random.shuffle(remaining_subjects)
-        
-        # PHASE 2: Assign validation set for this partition
         current_val_clips = 0
         current_val_unstable = 0
         current_val_stable = 0
         
-        # Try to avoid subjects already in val sets of other partitions
-        val_subjects_other_partitions = set()
-        for p in range(num_partitions):
-            if p != partition:
-                val_subjects_other_partitions.update(subjects_in_val[p])
+        # Track subjects already in this partition's val set to avoid overlap
+        partition_val_subjects = set()
         
         while current_val_clips < val_target * 0.98:
-            # First try to find subjects not in val sets of other partitions
-            excluded = set(partition_assignments[partition]['val']) | val_subjects_other_partitions
+            # Select best subject that maintains ratio and avoids overlap
+            excluded = subjects_in_val | partition_val_subjects
             best_idx, best_stable, best_unstable, best_clips = select_best_subject_for_ratio(
-                remaining_subjects,
+                val_candidates,
                 current_val_stable,
                 current_val_unstable,
                 target_unstable_ratio,
@@ -238,45 +229,77 @@ def assign_subjects_to_partitions(
                 df
             )
             
-            # If no non-overlapping candidate, allow overlap but still maintain ratio
             if best_idx is None:
-                excluded = set(partition_assignments[partition]['val'])
+                # If no non-overlapping candidate, allow overlap but still maintain ratio
                 best_idx, best_stable, best_unstable, best_clips = select_best_subject_for_ratio(
-                    remaining_subjects,
+                    val_candidates,
                     current_val_stable,
                     current_val_unstable,
                     target_unstable_ratio,
-                    excluded,
+                    partition_val_subjects,  # Only exclude from this partition
                     df
                 )
-            
-            if best_idx is None:
-                break  # No more candidates
+                if best_idx is None:
+                    break
             
             partition_assignments[partition]['val'].append(best_idx)
             partition_clips[partition]['val'] += best_clips
             partition_stable[partition]['val'] += best_stable
             partition_unstable[partition]['val'] += best_unstable
-            subjects_in_val[partition].add(best_idx)
+            subjects_in_val.add(best_idx)
+            partition_val_subjects.add(best_idx)
             current_val_clips += best_clips
             current_val_stable += best_stable
             current_val_unstable += best_unstable
             
             if current_val_clips >= val_target:
                 break
-        
-        # PHASE 3: Assign all remaining subjects to training for this partition
-        val_subjects_this_partition = set(partition_assignments[partition]['val'])
-        train_subjects = [idx for idx in remaining_subjects 
-                         if idx not in val_subjects_this_partition]
-        
-        for idx in train_subjects:
-            partition_assignments[partition]['train'].append(idx)
-            partition_clips[partition]['train'] += df.loc[idx, 'clip_count']
-            partition_stable[partition]['train'] += df.loc[idx, 'stable']
-            partition_unstable[partition]['train'] += df.loc[idx, 'unstable']
     
-    # Build result dataframe - each subject appears exactly once per partition
+    # PHASE 3: Assign remaining subjects to training sets
+    # Subjects can be in training sets of multiple partitions
+    train_target = targets['target_train_clips']
+    
+    # All subjects not in test can potentially be in train
+    train_candidates = [idx for idx in subject_indices if idx not in subjects_in_test]
+    np.random.shuffle(train_candidates)
+    
+    for partition in range(num_partitions):
+        # Get subjects already assigned to this partition (test/val)
+        already_assigned = set(partition_assignments[partition]['test'] + 
+                              partition_assignments[partition]['val'])
+        
+        current_train_clips = partition_clips[partition]['train']
+        current_train_stable = partition_stable[partition]['train']
+        current_train_unstable = partition_unstable[partition]['train']
+        
+        # Assign subjects to training set until we reach target, maintaining ratio
+        while current_train_clips < train_target * 1.05:
+            # Select best subject that maintains ratio
+            best_idx, best_stable, best_unstable, best_clips = select_best_subject_for_ratio(
+                train_candidates,
+                current_train_stable,
+                current_train_unstable,
+                target_unstable_ratio,
+                already_assigned,
+                df
+            )
+            
+            if best_idx is None:
+                break  # No more candidates
+            
+            partition_assignments[partition]['train'].append(best_idx)
+            partition_clips[partition]['train'] += best_clips
+            partition_stable[partition]['train'] += best_stable
+            partition_unstable[partition]['train'] += best_unstable
+            already_assigned.add(best_idx)  # Prevent adding same subject twice to this partition
+            current_train_clips += best_clips
+            current_train_stable += best_stable
+            current_train_unstable += best_unstable
+            
+            if current_train_clips >= train_target * 1.05:
+                break
+    
+    # Build result dataframe
     for partition in range(num_partitions):
         for split in ['train', 'val', 'test']:
             for idx in partition_assignments[partition][split]:
@@ -289,23 +312,10 @@ def assign_subjects_to_partitions(
     return result_df
 
 
-def validate_partitions(result_df: pd.DataFrame, num_partitions: int, total_subjects: int) -> Dict:
+def validate_partitions(result_df: pd.DataFrame, num_partitions: int) -> Dict:
     """Validate that partitions meet requirements."""
     issues = []
     warnings = []
-    
-    # Check that each partition has exactly total_subjects
-    for p in range(num_partitions):
-        partition_df = result_df[result_df['partition'] == p]
-        unique_subjects = len(partition_df['subject'].unique())
-        if unique_subjects != total_subjects:
-            issues.append(f"Partition {p} has {unique_subjects} unique subjects, expected {total_subjects}")
-        
-        # Check that each subject appears exactly once in this partition
-        subject_counts = partition_df['subject'].value_counts()
-        duplicates = subject_counts[subject_counts > 1]
-        if len(duplicates) > 0:
-            issues.append(f"Partition {p} has {len(duplicates)} subjects appearing multiple times")
     
     # Check test set overlaps (using 'subject' column to identify subjects)
     test_sets = {}
@@ -416,7 +426,7 @@ def main():
     )
     
     # Validate partitions
-    validation = validate_partitions(result_df, args.partitions, len(df))
+    validation = validate_partitions(result_df, args.partitions)
     
     if validation['issues']:
         print("\n❌ CRITICAL ISSUES FOUND:")
@@ -446,8 +456,7 @@ def main():
         
         output_file = os.path.join(args.output_dir, f'partition{p}.csv')
         partition_df.to_csv(output_file, index=True)
-        unique_subjects = len(partition_df['subject'].unique())
-        print(f"  Written {output_file} ({unique_subjects} unique subjects, {len(partition_df)} rows)")
+        print(f"  Written {output_file} ({len(partition_df)} subjects)")
     
     print("\n✅ Done!")
 

@@ -5,7 +5,7 @@ import numpy as np
 
 SUBJECTS    = "csvs/subjects.csv"
 CLIPS       = "csvs/clips.csv"
-SKEL_ARRAYS = "output2/skels.npz"
+SKEL_ARRAYS = "output/output2/skels.npz"
 
 # import argparse
 # args = argparse.ArgumentParser()
@@ -64,10 +64,9 @@ def fold_csv_to_skel_pkl(fold):
 
 
 folds = [
-    ("folds/fold1_subjects.csv", "output2/fold1.pkl"),
-    ("folds/fold2_subjects.csv", "output2/fold2.pkl"),
-    ("folds/fold3_subjects.csv", "output2/fold3.pkl"),
-    ("folds/fold4_subjects.csv", "output2/fold4.pkl"),
+    ("output/p5/partition0.csv", "output/output3/part0.pkl"),
+    ("output/p5/partition1.csv", "output/output3/part1.pkl"),
+    ("output/p5/partition2.csv", "output/output3/part2.pkl"),
 ]
 
 for fold_path, output_path in folds:

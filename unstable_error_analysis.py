@@ -15,7 +15,7 @@ VIDEO_DIR_PATH = Path("/Users/aldo/Code/avlab/dataset/resized_400_flat/")
 # This pickle contains it all. It is a dict.
 # You can check which fields it has by seeing the `train_test_split.py` script
 # in poseops.
-FOLD_PKL_PATH = Path("/Users/aldo/Code/avlab/poseopsfinal/output2/fold1.pkl")
+FOLD_PKL_PATH = Path("/Users/aldo/Code/avlab/poseopsfinal/output/output2/fold1.pkl")
 SET = "test" # in [train,val,test]
 
 with open(FOLD_PKL_PATH, 'rb') as f:
