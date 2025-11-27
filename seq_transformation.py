@@ -4,8 +4,8 @@ import numpy as np
 import pickle
 from tqdm import tqdm
 
-INPUT          =             './output_merged/merged.pkl'
-OUTPUT         = './output_merged/skateformer/merged.npz'
+INPUT          =             './output/output4/part2.pkl'
+OUTPUT         = './output/output4/skateformer/part2.npz'
 
 def remove_nan_frames(ske_joints, nan_logger):
     num_frames = ske_joints.shape[0]

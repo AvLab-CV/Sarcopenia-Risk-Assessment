@@ -5,21 +5,13 @@ import numpy as np
 
 SUBJECTS    = "csvs/subjects.csv"
 CLIPS       = "csvs/clips.csv"
-SKEL_ARRAYS = "output/output2/skels.npz"
-
-# import argparse
-# args = argparse.ArgumentParser()
-# args.add_argument('fold', help="fold CSV")
-# args.add_argument('output', help="the output")
-# args = args.parse_args()
-# FOLD        = args.fold
-# OUTPUT      = args.output
+SKEL_ARRAYS = "output/all_124_nosub1_resized_skels.npz"
 
 skels = np.load(SKEL_ARRAYS)
 subjects = pd.read_csv(SUBJECTS, index_col=0)
 clips = pd.read_csv(CLIPS, index_col=0)
 
-def fold_csv_to_skel_pkl(fold):
+def partition_csv_to_skel_pkl(partition):
     train_X = []
     train_Y = []
     train_clips = []
@@ -30,8 +22,8 @@ def fold_csv_to_skel_pkl(fold):
     test_Y  = []
     test_clips = []
 
-    for subj_idx, subj in fold.iterrows():
-        subj_id = subjects.iloc[subj_idx]["subject"]
+    for subj_idx, subj in partition.iterrows():
+        subj_id = subj["subject"]
         subj_clips = clips.loc[clips["subject"] == subj_id]
         subj_clip_paths = subj_clips["clip_path"]
         subj_skels = [skels[name] for name in subj_clip_paths]
@@ -63,15 +55,15 @@ def fold_csv_to_skel_pkl(fold):
     )
 
 
-folds = [
-    ("output/p5/partition0.csv", "output/output3/part0.pkl"),
-    ("output/p5/partition1.csv", "output/output3/part1.pkl"),
-    ("output/p5/partition2.csv", "output/output3/part2.pkl"),
+partitions = [
+    ("output/p5/partition0.csv", "output/output4/part0.pkl"),
+    ("output/p5/partition1.csv", "output/output4/part1.pkl"),
+    ("output/p5/partition2.csv", "output/output4/part2.pkl"),
 ]
 
-for fold_path, output_path in folds:
-    fold  = pd.read_csv(fold_path)
-    out = fold_csv_to_skel_pkl(fold)
+for partition_path, output_path in partitions:
+    partition  = pd.read_csv(partition_path)
+    out = partition_csv_to_skel_pkl(partition)
 
     print(f"Output to {output_path}")
     with open(output_path, 'wb') as f:

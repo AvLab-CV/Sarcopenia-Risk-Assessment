@@ -12,6 +12,41 @@ def print_to_string(*args, **kwargs):
     output.close()
     return contents
 
+def check_overlaps(partition_paths):
+    test_sets_across_partitions = []
+
+    for pth in partition_paths:
+        df = pd.read_csv(pth)
+        print(f"\nChecking overlaps for: {pth.name}")
+
+        train = set(df.loc[df["split"] == "train", "subject"])
+        val   = set(df.loc[df["split"] == "val",   "subject"])
+        test  = set(df.loc[df["split"] == "test",  "subject"])
+
+        # Within-partition overlaps
+        for a, b, name in [(train, val, "train-val"),
+                           (train, test, "train-test"),
+                           (val, test,  "val-test")]:
+            overlap = a & b
+            if overlap:
+                print(f"  ❌ {name} overlap: {sorted(overlap)}")
+            else:
+                print(f"  ✔ {name} clean")
+
+        test_sets_across_partitions.append(test)
+
+    # Cross-partition test overlap
+    print("\nChecking cross-partition test overlaps:")
+    all_tests = test_sets_across_partitions
+    n = len(all_tests)
+    for i in range(n):
+        for j in range(i+1, n):
+            overlap = all_tests[i] & all_tests[j]
+            if overlap:
+                print(f"  ❌ test{i}–test{j} overlap: {sorted(overlap)}")
+            else:
+                print(f"  ✔ test{i}–test{j} clean")
+
 def get_partition_info(partition_paths) -> str:
     text = ""
 
@@ -62,5 +97,6 @@ if __name__ == "__main__":
         PARTITION_DIR / f"partition{partition}.csv"
         for partition in range(PARTITIONS_COUNT)
     ]
+    check_overlaps(partition_paths)
     print(get_partition_info(partition_paths), end="")
 
