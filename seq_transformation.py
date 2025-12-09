@@ -4,9 +4,6 @@ import numpy as np
 import pickle
 from tqdm import tqdm
 
-INPUT          =             './output/output4/part2.pkl'
-OUTPUT         = './output/output4/skateformer/part2.npz'
-
 def remove_nan_frames(ske_joints, nan_logger):
     num_frames = ske_joints.shape[0]
     valid_frames = []
@@ -86,21 +83,17 @@ def one_hot_vector(labels):
 
     return labels_vector
 
-
-if __name__ == '__main__':
-    with open(INPUT, 'rb') as fr:
-        fold = pickle.load(fr)
-
+def seq_transformation(partition):
     data = {}
     for set_name in ["train", "val", "test"]:
         # DeMorgan's Law.
-        if (set_name + "_X") not in fold or (set_name + "_Y") not in fold:
+        if (set_name + "_X") not in partition or (set_name + "_Y") not in partition:
             continue
 
         print(f"Set: {set_name}")
 
-        skes_joints = fold[set_name + "_X"]
-        labels      = fold[set_name + "_Y"]
+        skes_joints = partition[set_name + "_X"]
+        labels      = partition[set_name + "_Y"]
         skes_joints = seq_translation(skes_joints)
         skes_len = np.array([sk.shape[0] for sk in skes_joints]) # <- save the original length before alignment
         skes_joints = align_frames(skes_joints)  # aligned to the same frame length
@@ -115,5 +108,15 @@ if __name__ == '__main__':
         print("sarcopenia count=", data["y_" + set_name][:, 1].sum().item())
         print()
 
+    return data
+
+if __name__ == '__main__':
+    INPUT  = './output/output4/part2.pkl'
+    OUTPUT = './output/output4/skateformer/part2.npz'
+
+    with open(INPUT, 'rb') as fr:
+        partition = pickle.load(fr)
+
+    data = seq_transformation(partition)
     np.savez(OUTPUT, **data)
     print(f"Wrote final training-ready .npz to {OUTPUT}")

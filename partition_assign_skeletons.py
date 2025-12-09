@@ -1,11 +1,14 @@
-import pickle
-import pandas as pd
-import numpy as np
+import argparse
+from pathlib import Path
 
+import numpy as np
+import pandas as pd
+
+from seq_transformation import seq_transformation
 
 SUBJECTS    = "csvs/subjects.csv"
 CLIPS       = "csvs/clips.csv"
-SKEL_ARRAYS = "output/all_124_nosub1_resized_skels.npz"
+SKEL_ARRAYS = "output/skeletons/skels_all_124_nosub1_resized.npz"
 
 skels = np.load(SKEL_ARRAYS)
 subjects = pd.read_csv(SUBJECTS, index_col=0)
@@ -55,16 +58,37 @@ def partition_csv_to_skel_pkl(partition):
     )
 
 
-partitions = [
-    ("output/p5/partition0.csv", "output/output4/part0.pkl"),
-    ("output/p5/partition1.csv", "output/output4/part1.pkl"),
-    ("output/p5/partition2.csv", "output/output4/part2.pkl"),
-]
 
-for partition_path, output_path in partitions:
-    partition  = pd.read_csv(partition_path)
-    out = partition_csv_to_skel_pkl(partition)
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    "input_dir",
+    type=Path,
+    help="Directory containing the outputs to process.",
+)
+args = parser.parse_args()
 
-    print(f"Output to {output_path}")
-    with open(output_path, 'wb') as f:
-        pickle.dump(out, f)
+# INPUT_DIR  = Path("output/20251128_1753_partition")
+INPUT_DIR  = args.input_dir
+# OUTPUT_DIR = INPUT_DIR.parent / (INPUT_DIR.parts[-1] + "_skel")
+OUTPUT_DIR = INPUT_DIR
+inputs = [p for p in INPUT_DIR.iterdir() if p.suffix == ".csv"]
+inputs.sort()
+
+# print("Using:\n -", '\n - '.join(str(x) for x in inputs))
+print("Assigning skeletons + performing seq transformation")
+for input_path in inputs:
+
+    partition  = pd.read_csv(input_path)
+    pkl = partition_csv_to_skel_pkl(partition)
+    seq_npz = seq_transformation(pkl)
+
+    OUTPUT_DIR.mkdir(exist_ok=True)
+
+    # output_path_pkl = OUTPUT_DIR / (input_path.stem + ".pkl")
+    # print(f"{input_path} -> {output_path_pkl}")
+    # with open(output_path_pkl, 'wb') as f:
+    #     pickle.dump(pkl, f)
+
+    output_path_seq = OUTPUT_DIR / (input_path.stem + ".npz")
+    print(f"{input_path} -> {output_path_seq}")
+    np.savez(output_path_seq, **seq_npz)
