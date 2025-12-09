@@ -105,129 +105,83 @@ def coco_h36m(keypoints):
     return keypoints_h36m, valid_frames
 
 
-# indices for COCO (for clarity)
-COCO = {
-    "nose": 0,
-    "left_eye": 1,
-    "right_eye": 2,
-    "left_ear": 3,
-    "right_ear": 4,
-    "left_shoulder": 5,
-    "right_shoulder": 6,
-    "left_elbow": 7,
-    "right_elbow": 8,
-    "left_wrist": 9,
-    "right_wrist": 10,
-    "left_hip": 11,
-    "right_hip": 12,
-    "left_knee": 13,
-    "right_knee": 14,
-    "left_ankle": 15,
-    "right_ankle": 16,
+H36M = {
+    "pelvis": 0,
+    "right_hip": 1,
+    "right_knee": 2,
+    "right_ankle": 3,
+    "left_hip": 4,
+    "left_knee": 5,
+    "left_ankle": 6,
+    "spine": 7,
+    "thorax": 8,
+    "neck": 9,
+    "head": 10,
+    "left_shoulder": 11,
+    "left_elbow": 12,
+    "left_wrist": 13,
+    "right_shoulder": 14,
+    "right_elbow": 15,
+    "right_wrist": 16,
 }
 
-def _safe_mean(points):
-    """points: list of (3,) arrays. Returns (3,) mean; ignores NaNs."""
-    if len(points) == 0:
-        return np.array([np.nan, np.nan, 0.0], dtype=float)
-    arr = np.stack(points, axis=0).astype(float)
-    # for coordinates: mean ignoring rows that are all-nans
-    coords = arr[:, :2]
-    confs = arr[:, 2]
-    # mask rows where coords are nan
-    valid_row = ~np.isnan(coords).all(axis=1)
-    if not valid_row.any():
-        return np.array([np.nan, np.nan, float(np.nan)])
-    mean_xy = np.nanmean(coords[valid_row], axis=0)
-    # for confidence we use mean of valid confs
-    mean_conf = float(np.nanmean(confs[valid_row]))
-    return np.array([mean_xy[0], mean_xy[1], mean_conf], dtype=float)
-
-def coco17_to_ntu25(coco_kps):
+def h36m17_to_ntu25(h36m_kps):
     """
-    Convert COCO 17 keypoints (shape (17,3)) to NTU 25 keypoints (shape (25,3)).
-    Args:
-        coco_kps: np.ndarray of shape (17,3) (x, y, confidence/visibility). May contain np.nan for missing coords.
-    Returns:
-        ntu_kps: np.ndarray shape (25,3) with the NTU joint order (0..24).
-    Notes:
-        - Where NTU has joints that COCO doesn't (hand tips / thumbs / extra spine points),
-          we approximate by averaging or copying nearby keypoints.
-        - This mapping is heuristic; tweak if you need different proxies (e.g. use head bbox to estimate hand tips).
+    Convert Human3.6M 3D joints (17 x 3) to the NTU RGB+D (25 x 3) format.
+    PoseFormer predicts joints in Human3.6M order, so we map them directly
+    instead of treating them like COCO 2D detections.
     """
-    coco_kps = np.asarray(coco_kps, dtype=float)
-    if coco_kps.shape != (17, 3):
-        raise ValueError("coco_kps must have shape (17,3)")
-    ntu = np.full((25, 3), np.nan, dtype=float)
+    h36m_kps = np.asarray(h36m_kps, dtype=float)
+    if h36m_kps.shape != (17, 3):
+        raise ValueError("h36m_kps must have shape (17, 3)")
 
-    # helper to fetch COCO joint as array
-    def K(name):
-        idx = COCO[name]
-        return coco_kps[idx]
+    ntu = np.zeros((25, 3), dtype=float)
 
-    # compute some convenience points
-    left_shoulder = K("left_shoulder")
-    right_shoulder = K("right_shoulder")
-    left_hip = K("left_hip")
-    right_hip = K("right_hip")
-    left_wrist = K("left_wrist")
-    right_wrist = K("right_wrist")
-    nose = K("nose")
+    def J(name):
+        return h36m_kps[H36M[name]]
 
-    # Neck ≈ midpoint of shoulders
-    neck = _safe_mean([left_shoulder, right_shoulder])
+    pelvis = J("pelvis")
+    spine = J("spine")
+    thorax = J("thorax")
+    neck = J("neck")
+    head = J("head")
+    left_wrist = J("left_wrist")
+    right_wrist = J("right_wrist")
+    left_ankle = J("left_ankle")
+    right_ankle = J("right_ankle")
 
-    # Base of spine ≈ midpoint of hips
-    spine_base = _safe_mean([left_hip, right_hip])
+    ntu[0] = pelvis
+    ntu[1] = spine
+    ntu[2] = neck
+    ntu[3] = head
 
-    # Middle spine ≈ midpoint of base spine and neck
-    middle_spine = _safe_mean([spine_base, neck])
+    ntu[4] = J("left_shoulder")
+    ntu[5] = J("left_elbow")
+    ntu[6] = left_wrist
+    ntu[7] = left_wrist  # no dedicated hand joints
 
-    # Upper spine (NTU "spine") ≈ midpoint of middle_spine and neck
-    upper_spine = _safe_mean([middle_spine, neck])
-
-    # Head: use nose (COCO has no explicit 'head top'); optionally could average nose + eyes
-    head = _safe_mean([nose, K("left_eye"), K("right_eye")])
-
-    # Map NTU indices (0-based) -> description:
-    # 0 base of the spine, 1 middle of the spine, 2 neck, 3 head,
-    # 4 left shoulder, 5 left elbow, 6 left wrist, 7 left hand,
-    # 8 right shoulder, 9 right elbow, 10 right wrist, 11 right hand,
-    # 12 left hip, 13 left knee, 14 left ankle, 15 left foot,
-    # 16 right hip, 17 right knee, 18 right ankle, 19 right foot,
-    # 20 spine (upper), 21 tip of left hand, 22 left thumb, 23 tip of right hand, 24 right thumb
-
-    # Fill direct mappings
-    ntu[0]  = spine_base                 # base of spine
-    ntu[1]  = middle_spine               # middle of spine
-    ntu[2]  = neck                       # neck
-    ntu[3]  = head                       # head
-    ntu[4]  = left_shoulder
-    ntu[5]  = K("left_elbow")
-    ntu[6]  = left_wrist
-    ntu[7]  = left_wrist                 # left hand ~ left wrist (no hand tip in COCO)
-    ntu[8]  = right_shoulder
-    ntu[9]  = K("right_elbow")
+    ntu[8] = J("right_shoulder")
+    ntu[9] = J("right_elbow")
     ntu[10] = right_wrist
-    ntu[11] = right_wrist                # right hand ~ right wrist
-    ntu[12] = left_hip
-    ntu[13] = K("left_knee")
-    ntu[14] = K("left_ankle")
-    ntu[15] = K("left_ankle")            # left foot ≈ left ankle (no separate foot in COCO)
-    ntu[16] = right_hip
-    ntu[17] = K("right_knee")
-    ntu[18] = K("right_ankle")
-    ntu[19] = K("right_ankle")           # right foot ≈ right ankle
-    ntu[20] = upper_spine
+    ntu[11] = right_wrist
 
-    # hand tips & thumbs (21..24) — no direct COCO equivalent: copy wrist (or optionally set NaN)
-    ntu[21] = left_wrist   # tip of left hand
-    ntu[22] = left_wrist   # left thumb
-    ntu[23] = right_wrist  # tip of right hand
-    ntu[24] = right_wrist  # right thumb
+    ntu[12] = J("left_hip")
+    ntu[13] = J("left_knee")
+    ntu[14] = left_ankle
+    ntu[15] = left_ankle
 
-    # Post-process: if any entry has NaN coords but has non-zero conf in inputs, ensure conf is meaningful.
-    # Here we keep computed confidences from _safe_mean / originals; leave NaNs if coords NaN.
+    ntu[16] = J("right_hip")
+    ntu[17] = J("right_knee")
+    ntu[18] = right_ankle
+    ntu[19] = right_ankle
+
+    ntu[20] = thorax
+
+    ntu[21] = left_wrist
+    ntu[22] = left_wrist
+    ntu[23] = right_wrist
+    ntu[24] = right_wrist
+
     return ntu
 
 
@@ -247,7 +201,7 @@ def video_to_array(model, video_path):
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     cap.release()
 
-    coco_skeleton_frames = []
+    h36m_skeleton_frames = []
 
     for i in tqdm(range(frame_count)):
         img_size = height, width
@@ -302,10 +256,10 @@ def video_to_array(model, video_path):
         rot = np.array(rot, dtype='float32')
         post_out = camera_to_world(post_out, R=rot, t=0)
         post_out[:, 2] -= np.min(post_out[:, 2])
-        coco_skeleton_frames.append(post_out)
+        h36m_skeleton_frames.append(post_out)
 
 
-    ntu_skeleton_frames = [coco17_to_ntu25(kpts) for kpts in coco_skeleton_frames]
+    ntu_skeleton_frames = [h36m17_to_ntu25(kpts) for kpts in h36m_skeleton_frames]
     ntu_skeleton_frames = np.stack(ntu_skeleton_frames)
     return ntu_skeleton_frames
 
