@@ -1,12 +1,18 @@
+from __future__ import annotations
+
 import argparse
+import itertools
+from pathlib import Path
+from typing import Iterable, List, Sequence
+
+import cv2
+import einops
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-from mpl_toolkits.mplot3d.art3d import Line3DCollection, Path3DCollection
 import numpy as np
 from matplotlib.animation import FuncAnimation
-import einops
-import cv2
-from pathlib import Path
+from matplotlib.lines import Line2D
+from mpl_toolkits.mplot3d import Axes3D
+from mpl_toolkits.mplot3d.art3d import Line3DCollection, Path3DCollection
 from seq_transformation import seq_translation
 
 SKELETON_CONNECTIONS = [
@@ -41,9 +47,153 @@ SKELETON_CONNECTIONS = [
     [18, 19],
 ]
 SKELETON_CONNECTIONS = np.array(SKELETON_CONNECTIONS)
+COLOR_MAP = plt.cm.get_cmap("tab10")
+
+
+def _ensure_skeleton_list(
+    skeletons: Sequence[np.ndarray] | np.ndarray,
+) -> List[np.ndarray]:
+    if isinstance(skeletons, np.ndarray):
+        return [skeletons]
+    if isinstance(skeletons, Iterable):
+        return [np.asarray(sk) for sk in skeletons]
+    raise TypeError("skeletons must be an ndarray or an iterable of ndarrays.")
+
+
+def _normalize_skeleton(skeleton: np.ndarray) -> np.ndarray:
+    if skeleton.ndim == 3 and skeleton.shape[-1] == 3:
+        skeleton = einops.rearrange(skeleton, "frame joint coord -> frame (joint coord)")
+    skeleton = seq_translation(skeleton[None])[0]
+    return einops.rearrange(skeleton, "frame (joint coord) -> frame joint coord", coord=3)
+
+
+def visualize_skeleton(
+    skeletons: Sequence[np.ndarray] | np.ndarray,
+    clip_names: Sequence[str] | None = None,
+    video_root: Path | None = None,
+    repeat: bool = True,
+    figure: plt.Figure | None = None,
+    block: bool = True,
+) -> None:
+    skels = _ensure_skeleton_list(skeletons)
+    if not skels:
+        raise ValueError("No skeletons provided.")
+
+    skels = [_normalize_skeleton(skel) for skel in skels]
+    clip_names = list(clip_names) if clip_names is not None else [f"clip_{i}" for i in range(len(skels))]
+    if len(clip_names) != len(skels):
+        raise ValueError("clip_names must match the number of skeletons.")
+
+    show_video = video_root is not None
+    video_lookup: dict[str, Path] = {}
+    if show_video:
+        if video_root.exists():
+            video_lookup = {p.name: p for p in video_root.rglob("*.mp4")}
+        else:
+            print(f"Video root {video_root} not found; showing skeletons only.")
+            show_video = False
+
+    video_paths = [video_lookup.get(name) for name in clip_names]
+    primary_video_idx = next((idx for idx, path in enumerate(video_paths) if path and path.exists()), None)
+
+    max_frames = max(skel.shape[0] for skel in skels)
+    skel_lines = [skel[:, SKELETON_CONNECTIONS, :] for skel in skels]
+
+    fig = figure if figure is not None else plt.figure()
+    fig.clf()
+    if show_video and primary_video_idx is not None:
+        ax: Axes3D = fig.add_subplot(1, 2, 1, projection="3d")
+        ax2 = fig.add_subplot(1, 2, 2)
+        image = ax2.imshow(np.zeros((10, 10, 3)))
+    else:
+        ax = fig.add_subplot(1, 1, 1, projection="3d")
+        ax2 = image = None
+
+    ax.set_xlim(-1, 1)
+    ax.set_ylim(-1, 1)
+    ax.set_zlim(0, 2)
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
+    ax.set_zlabel("Z")
+
+    points: List[Path3DCollection] = []
+    lines: List[Line3DCollection] = []
+    legend_handles: List[Line2D] = []
+
+    for idx, skel in enumerate(skels):
+        color = COLOR_MAP(idx % COLOR_MAP.N)
+        pts = ax.scatter(*skel[0].T, color=color, s=10)
+        line = Line3DCollection(skel_lines[idx][0], colors=[color], linewidths=2)
+        ax.add_collection3d(line)
+        points.append(pts)
+        lines.append(line)
+        legend_handles.append(Line2D([0], [0], color=color, lw=2, label=clip_names[idx]))
+
+    if len(legend_handles) > 1:
+        ax.legend(handles=legend_handles, loc="upper right")
+
+    cap = None
+    if show_video and primary_video_idx is not None:
+        video_path = video_paths[primary_video_idx]
+        cap = cv2.VideoCapture(str(video_path))
+        fig.suptitle(f"{', '.join(clip_names)} (video: {clip_names[primary_video_idx]})", fontsize=14)
+    else:
+        fig.suptitle(", ".join(clip_names), fontsize=14)
+
+    def _next_video_frame():
+        if cap is None or image is None:
+            return
+        ret, frame = cap.read()
+        if not ret:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            ret, frame = cap.read()
+        if ret:
+            frame = frame[:, :, [2, 1, 0]]
+            image.set_data(frame)
+
+    def animate(frame_idx: int):
+        idx = frame_idx % max_frames
+        for skel_idx, skel in enumerate(skels):
+            local_idx = min(idx, skel.shape[0] - 1)
+            lines[skel_idx].set_segments(skel_lines[skel_idx][local_idx])
+            points[skel_idx]._offsets3d = (
+                skel[local_idx, :, 0],
+                skel[local_idx, :, 1],
+                skel[local_idx, :, 2],
+            )
+        _next_video_frame()
+
+    interval_ms = 30
+    if repeat:
+        ani: FuncAnimation | None = FuncAnimation(
+            fig, animate, frames=itertools.count(), interval=interval_ms, blit=False, repeat=True
+        )
+    else:
+        ani = None
+
+    def _cleanup(_):
+        if cap is not None:
+            cap.release()
+
+    fig.canvas.mpl_connect("close_event", _cleanup)
+    if repeat and ani is not None:
+        ani.resume()
+        plt.show(block=block)
+        return
+
+    # For non-repeating playback, drive frames manually to avoid timer callback issues.
+    plt.show(block=False)
+    for frame_idx in range(max_frames):
+        animate(frame_idx)
+        fig.canvas.draw_idle()
+        plt.pause(interval_ms / 1000)
+    _cleanup(None)
+    if block:
+        plt.pause(0.2)
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Visualize skeleton sequences alongside source videos.")
     parser = argparse.ArgumentParser(description="Visualize skeleton sequences alongside source videos.")
     parser.add_argument(
         "npz_path",
@@ -62,116 +212,15 @@ def main():
     if not skel_dict:
         raise ValueError(f"No skeletons found in {args.npz_path}")
 
-    clip_names = sorted(skel_dict.keys())
-    skels = [skel_dict[name] for name in clip_names]
-
-    show_video = args.video_root is not None
-    if show_video and args.video_root.exists():
-        video_lookup = {p.name: p for p in args.video_root.rglob("*.mp4")}
-    elif show_video:
-        print(f"Video root {args.video_root} not found; showing skeleton only.")
-        video_lookup = {}
-    else:
-        video_lookup = {}
-    videos = [video_lookup.get(name) if show_video else None for name in clip_names]
-
-    anim_idx = 0
-    base_idx = 0
-
-    for i in range(len(skels)):
-        # Seq translation
-        skels[i] = seq_translation(skels[i][None])[0]
-        
-        # Unmerge joint and coord dims
-        skels[i] = einops.rearrange(skels[i], "frame (joint coord) -> frame joint coord", coord=3)
-        
-        # Swap Y/Z to match visualization expectations
-        # skels[i] = skels[i][:, :, [0, 2, 1]]
-        # skels[i][:, :, 2] *= -1.0
-        # skels[i][:, :, 2] += 1
-
-    skels_lines = [skel[:, SKELETON_CONNECTIONS, :] for skel in skels]
-
-    def init_capture(index: int):
-        path = videos[index]
-        if path is None or not path.exists():
-            print(f"Video file not found for {clip_names[index]}; showing skeleton only.")
-            return None, None, None, None, None
-        cap = cv2.VideoCapture(str(path))
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
-        height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
-        return cap, fps, width, height, frame_count
-    
-    cap = fps = width = height = frame_count = None
-    if show_video:
-        cap, fps, width, height, frame_count = init_capture(anim_idx)
-
-    clip_msg = f"Clip: {clip_names[anim_idx]} skel_frames={skels[anim_idx].shape[0]}"
-    if show_video and fps is not None:
-        clip_msg += f" FPS={fps} frames={frame_count} width={width} height={height}"
-    print(clip_msg)
-
     fig = plt.figure()
-    if show_video:
-        ax: Axes3D = fig.add_subplot(1, 2, 1, projection="3d")
-    else:
-        ax: Axes3D = fig.add_subplot(1, 1, 1, projection="3d")
-    points: Path3DCollection = ax.scatter(*skels[anim_idx][0].T)  # Points
-
-    if show_video:
-        ax2: Axes3D = fig.add_subplot(1, 2, 2)
-        image = ax2.imshow(np.zeros((10, 10, 3)))
-    else:
-        ax2 = image = None
-
-    lines = Line3DCollection(skels_lines[anim_idx][0])
-    ax.add_collection3d(lines)
-
-    ax.set_xlim(-1, 1)
-    ax.set_ylim(-1, 1)
-    ax.set_zlim(0, 2)
-    ax.set_xlabel("X")
-    ax.set_ylabel("Y")
-    ax.set_zlabel("Z")
-
-    def animate(i):
-        nonlocal anim_idx, base_idx, cap, fps, frame_count
-
-        frame = i - base_idx
-        if frame >= skels[anim_idx].shape[0]:
-            base_idx = i
-            anim_idx += 1
-            if anim_idx >= len(skels):
-                anim_idx = 0
-            frame = 0
-            print(f"Next animation: {anim_idx}")
-            if cap is not None:
-                cap.release()
-            if show_video:
-                cap, fps, width, height, frame_count = init_capture(anim_idx)
-            clip_summary = f"Clip: {clip_names[anim_idx]} skel_frames={skels[anim_idx].shape[0]}"
-            if show_video and fps is not None:
-                clip_summary += f" FPS={fps} frames={frame_count} width={width} height={height}"
-            print(clip_summary)
-
-        skel = skels[anim_idx]
-        skel_lines = skels_lines[anim_idx]
-
-        fig.suptitle(clip_names[anim_idx], fontsize=16)
-        lines.set_segments(skel_lines[frame])
-        points._offsets3d = (skel[frame, :, 0], skel[frame, :, 1], skel[frame, :, 2])
-
-        if cap is not None and image is not None:
-            ret, frame_img = cap.read()
-            if ret:
-                frame_img = frame_img[:, :, [2, 1, 0]]
-                image.set_data(frame_img)
-
-    ani = FuncAnimation(fig, animate, interval=30)
-    ani.resume()
-    plt.show()
+    for clip in skel_dict:
+        visualize_skeleton(
+            [skel_dict[clip]],
+            clip_names=[clip],
+            video_root=args.video_root,
+            repeat=False,
+            figure=fig,
+        )
 
 
 if __name__ == "__main__":
