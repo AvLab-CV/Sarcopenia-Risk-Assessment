@@ -82,8 +82,7 @@ def summarize_split_stats(csv_path: Path) -> List[Dict]:
     total_unstable = int(df.get("unstable", pd.Series(dtype=int)).sum())
     grand_total_clips = total_stable + total_unstable
     
-    # Add "total" row first (or last, depending on preference. User said "Add an additional 'total' column" but meant row/entry likely)
-    # The user said "column" but tables are usually row-wise for splits. I will add it as a row.
+    # Add "total" row first
     stats.append({
         "split": "total",
         "subjects": total_subj,
@@ -326,9 +325,13 @@ def plot_confusion_matrix_and_roc(partition: PartitionSpec, csv_path: Path, outp
     )
 
     fig.tight_layout()
-    out = output_dir / f"run{partition.idx}_cm.pdf"
-    print(f"Saving to {out}")
-    fig.savefig(out)
+    out_pdf = output_dir / f"run{partition.idx}_cm.pdf"
+    fig.savefig(out_pdf)
+    print(f"Saving to {out_pdf}")
+
+    out_jpg = output_dir / f"run{partition.idx}_cm.jpg"
+    fig.savefig(out_jpg)
+    print(f"Saving to {out_jpg}")
     plt.close(fig)
 
     metrics = {
@@ -418,9 +421,12 @@ def plot_average_results(results: List[PartitionResult], output_dir: Path):
     )
 
     fig.tight_layout()
-    out = output_dir / "avg_cm.pdf"
-    print(f"Saving to {out}")
-    fig.savefig(out)
+    out_pdf = output_dir / "avg_cm.pdf"
+    print(f"Saving to {out_pdf}")
+    fig.savefig(out_pdf)
+    out_jpg = output_dir / "avg_cm.jpg"
+    print(f"Saving to {out_jpg}")
+    fig.savefig(out_jpg)
     plt.close(fig)
 
 
@@ -473,9 +479,23 @@ def build_partition_table(results: List[PartitionResult]) -> str:
     if not results:
         return ""
 
+    # Collect all metric values to find max for each
+    all_accuracies = [res.metrics['accuracy'] for res in results]
+    all_precisions = [res.metrics['precision'] for res in results]
+    all_recalls = [res.metrics['recall'] for res in results]
+    all_aucs = [res.metrics['roc_auc'] for res in results]
+
+    max_acc = max(all_accuracies)
+    max_prec = max(all_precisions)
+    max_rec = max(all_recalls)
+    max_auc = max(all_aucs)
+
+    def fmt_val(val: float, max_val: float) -> str:
+        s = f"{val:.3f}"
+        return f"*{s}*" if val == max_val else s
+
     rows = []
     for res in results:
-        # Use the 'test' split stats for the summary table if available, else aggregate or pick first
         test_stats = next((s for s in res.split_stats if s["split"] == "test"), None)
         if test_stats:
             sarc_pct = test_stats["sarcopenia_pct"]
@@ -487,10 +507,10 @@ def build_partition_table(results: List[PartitionResult]) -> str:
         metrics = res.metrics
         rows.append(
             f"[{res.spec.partition_label}], "
-            f"[{metrics['accuracy']:.3f}], "
-            f"[{metrics['precision']:.3f}], "
-            f"[{metrics['recall']:.3f}], "
-            f"[{metrics['roc_auc']:.3f}], "
+            f"[{fmt_val(metrics['accuracy'], max_acc)}], "
+            f"[{fmt_val(metrics['precision'], max_prec)}], "
+            f"[{fmt_val(metrics['recall'], max_rec)}], "
+            f"[{fmt_val(metrics['roc_auc'], max_auc)}], "
             f"[{sarc_pct:.1f}%], "
             f"[{unstable_pct:.1f}%],"
         )
@@ -534,7 +554,7 @@ def save_metrics_csv(results: List[PartitionResult], output_dir: Path):
     print(f"Saved partition metrics to {metrics_path}")
 
 
-def load_training_config(path) -> str:
+def load_training_config(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
@@ -545,9 +565,19 @@ def build_typst_source(
     comparison_section: str,
 ) -> str:
     return f"""
-= Ablation study on different data-splitting strategies
+= Ablation study: different data-splitting strategies
 
 *Using {dt}.*
+
+== Explanation of partitioning methods
+
+- *Random Split* – Subjects are shuffled and partitioned purely by count into train/val/test, so clip or label composition may differ across splits. Use as a baseline for comparison.
+- *Stratified by Group* – Sarcopenia and normal subjects are split independently with the same ratios, then recombined. This keeps each set’s sarcopenia/normal proportions aligned with the overall dataset.
+- *Balanced 1:1 Ratio* – First undersamples the larger subject group so sarcopenia and normal have equal counts, then applies the group-wise stratified split. Ensures balanced subject representation but sacrifices some data.
+- *Clip-Balanced* – Sorts subjects by clip count and greedily assigns each subject to the split with the largest clip deficit relative to the desired ratio. Aims to equalize total clips per split without per-group guarantees.
+- *Stratified by Stability* – Groups subjects by their stability profile (all stable, all unstable, mixed) and splits each category separately before recombining. Keeps these behavioral patterns evenly distributed.
+- *Double Stratified* – Adds another layer to the stability stratification by also separating sarcopenia vs. normal. Each group-pattern combination is split individually, yielding the most controlled, fine-grained balance across both clinical label and stability profile.
+
 
 == Training results
 
@@ -592,9 +622,13 @@ def main():
         if logdir.exists():
             fig = plot_loss(partition.idx, logdir, args.use_last)
             if fig:
-                out = output_dir / f"run{partition.idx}_loss.pdf"
-                print(f"Saving to {out}")
-                fig.savefig(out)
+                out_pdf = output_dir / f"run{partition.idx}_loss.pdf"
+                print(f"Saving to {out_pdf}")
+                fig.savefig(out_pdf)
+
+                out_jpg = output_dir / f"run{partition.idx}_loss.jpg"
+                print(f"Saving to {out_jpg}")
+                fig.savefig(out_jpg)
                 plt.close(fig)
             else:
                 print(f"Skipping loss plot for {partition.display_name}: no scalar data")
