@@ -16,7 +16,8 @@ UNSTABLE_WINDOW_THRESH = 0.5
 # if this fraction of this subject's windows is unstable, then we predict this subject to have sarcopenia
 UNSTABLE_WINDOWS_FRACTION_SARCOPENIA_THRESH = 0.2
 
-df_original = pd.read_csv(f"./output/results/fold{FOLD}_sliding_window_windowsize{WINDOW_SIZE}_stride{STRIDE}.csv")
+# df_original = pd.read_csv(f"./output/results/fold{FOLD}_sliding_window_windowsize{WINDOW_SIZE}_stride{STRIDE}.csv")
+df_original = pd.read_csv(f"/Users/aldo/Code/avlab/SkateFormer_synced/work_dir/20251210_0105/partition1/sliding_window/sliding_window_windowsize{WINDOW_SIZE}_stride{STRIDE}.csv")
 df_original['predictions'] = df_original['predictions'].map(lambda x: np.fromstring(x.strip("[ ]"), sep=' '))
 largest_window = df_original['predictions'].map(lambda x: x.shape[0]).max()
 # position of the beginning window `i`
@@ -48,10 +49,10 @@ def plot_sliding_window(df, subject_idx, kind='bars'):
     window_pos *= (1.0 / 30.0) # convert from frames to seconds
     seq_len = df.loc[subject_idx, 'seq_len'].astype(np.float32)
     seq_len *= (1.0 / 30.0) # convert from frames to seconds
-    sarcopenia = df.loc[subject_idx, 'subject_has_sarcopenia'] == 1
-    sarcopenia_predicted = df.loc[subject_idx, 'sarcopenia_predicted'] == 1
-    sarcopenia_label = 'sarcopenia' if sarcopenia else 'normal'
-    unstable_label = 'sarcopenia' if sarcopenia_predicted else 'normal'
+    # sarcopenia = df.loc[subject_idx, 'subject_has_sarcopenia'] == 1
+    # sarcopenia_predicted = df.loc[subject_idx, 'sarcopenia_predicted'] == 1
+    # sarcopenia_label = 'sarcopenia' if sarcopenia else 'normal'
+    # unstable_label = 'sarcopenia' if sarcopenia_predicted else 'normal'
 
     fig = plt.figure()
     ax = fig.add_subplot(111)
@@ -146,14 +147,16 @@ normal_unstable_fraction =     df.loc[df['subject_has_sarcopenia'] == 0, 'unstab
 sarcopenia_unstable_fraction = df.loc[df['subject_has_sarcopenia'] == 1, 'unstable_fraction']
 print(f"normal_unstable_fraction     ~ {normal_unstable_fraction.mean()} += {normal_unstable_fraction.std()}")
 print(f"sarcopenia_unstable_fraction ~ {sarcopenia_unstable_fraction.mean()} += {sarcopenia_unstable_fraction.std()}")
-# plot_sliding_window_all(df)
+plot_sliding_window_all(df)
 #
 
 print("CM:")
-print((~df['subject_has_sarcopenia'] & ~df['sarcopenia_predicted']).sum())
-print((df['subject_has_sarcopenia'] & ~df['sarcopenia_predicted']).sum())
-print((~df['subject_has_sarcopenia'] & df['sarcopenia_predicted']).sum())
-print((df['subject_has_sarcopenia'] & df['sarcopenia_predicted']).sum())
+cm00 = ((~df['subject_has_sarcopenia'] & ~df['sarcopenia_predicted']).sum())
+cm01 = ((df['subject_has_sarcopenia'] & ~df['sarcopenia_predicted']).sum())
+cm10 = ((~df['subject_has_sarcopenia'] & df['sarcopenia_predicted']).sum())
+cm11 = ((df['subject_has_sarcopenia'] & df['sarcopenia_predicted']).sum())
+print(f"{cm00} {cm01}")
+print(f"{cm10} {cm11}")
 
 # Perform a grid sweep to find the best threshold (overfits to the dataset)
 def sweep(SWEEP_I, SWEEP_J):
