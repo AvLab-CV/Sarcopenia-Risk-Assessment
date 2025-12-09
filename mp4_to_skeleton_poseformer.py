@@ -1,35 +1,44 @@
 import copy
 import os
 import os.path as osp
+import sys
 import cv2
 import numpy as np
 import argparse
 from pathlib import Path
 from tqdm import tqdm
-import pickle
 import torch
 import torch.nn as nn
 from poseformerv2.model_poseformer import PoseTransformerV2 as Model
 from poseformerv2.camera import *
 from lib.hrnet.gen_kpts import gen_video_kpts as hrnet_pose
 
-os.environ['PYOPENGL_PLATFORM'] = 'egl'
-os.environ['EGL_PLATFORM'] = 'surfaceless'
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    "video_dir_path",
+    type=Path,
+)
+parser.add_argument(
+    "output_path",
+    type=Path,
+)
+parser.add_argument(
+    "--limit",
+    type=int,
+)
+args = parser.parse_args()
 
-VIDEO_PATH = Path("/Users/aldo/Code/avlab/dataset/all_124_nosub1")
+# Prevent downstream argparse users (e.g., HRNet) from seeing PoseFormer CLI args.
+sys.argv = sys.argv[:1]
+
+VIDEO_PATH: Path = args.video_dir_path
+SKELETON_OUTPUT_PATH: Path = args.output_path
 VIDEOS = list(VIDEO_PATH.iterdir())
+SKELETON_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-os.makedirs("output/output3", exist_ok=True)
-SKELETON_OUTPUT_PATH          = "output/output3/NEW_video_skel.pkl"
-SARCOPENIA_LABELS_OUTPUT_PATH = "output/output3/NEW_sarcopenia_labels.txt"
-UNSTABLE_LABELS_OUTPUT_PATH   = "output/output3/NEW_unstable_labels.txt"
-PATHS_OUTPUT_PATH             = "output/output3/NEW_paths.txt"
-SUBJECT_OUTPUT_PATH           = "output/output3/NEW_subjects.txt"
-MEDIAPIPE_MODEL_PATH          = "models/mediapipe/pose_landmarker_heavy.task"
-
-# # DEBUG
-# VIDEOS = VIDEOS[:3]
-# print (VIDEOS)
+# Limit to N samples
+if args.limit:
+    VIDEOS = VIDEOS[:args.limit]
 
 h36m_coco_order = [9, 11, 14, 12, 15, 13, 16, 4, 1, 5, 2, 6, 3]
 coco_order = [0, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
@@ -302,14 +311,6 @@ def video_to_array(model, video_path):
 
 def main():
     print("Loading model")
-    # MODEL_PATH = 'models/poseformer/9_81_46.0.bin'
-    # args, _ = argparse.ArgumentParser().parse_known_args()
-    # args.embed_dim_ratio, args.depth, args.frames = 32, 4, 81
-    # args.number_of_kept_frames, args.number_of_kept_coeffs = 9, 9
-    # args.pad = (args.frames - 1) // 2
-    # args.previous_dir = 'checkpoint/'
-    # args.n_joints, args.out_joints = 17, 17
-
     MODEL_PATH = 'models/poseformer/27_243_45.2.bin'
     args, _ = argparse.ArgumentParser().parse_known_args()
     args.embed_dim_ratio, args.depth, args.frames = 32, 4, 243
@@ -318,50 +319,23 @@ def main():
     args.previous_dir = 'checkpoint/'
     args.n_joints, args.out_joints = 17, 17
     
-    # model = Model(args=args).to("cuda")
     model = nn.DataParallel(Model(args=args)).cuda()
     model.load_state_dict(torch.load(MODEL_PATH)['model_pos'], strict=True)
     model.eval()
 
-    video_skel = []
-    sarcopenia_labels = []
-    unstable_labels = []
-    subjects = []
+    skel_by_video = {}
 
     for i, video_path in enumerate(tqdm(VIDEOS)):
-        parts = video_path.stem.split("_")
-        # print(parts)
-        class_sarcopenia_normal = int(parts[0])
-        subject = int(parts[1])
-        # _length = parts[2]
-        class_stable_unstable = int(parts[3])
-
         try:
             arr = video_to_array(model, str(video_path))
             arr = arr.reshape(-1, 75)
-            video_skel.append(arr)
-            sarcopenia_labels.append(class_sarcopenia_normal)
-            unstable_labels.append(class_stable_unstable)
-            subjects.append(subject)
+            skel_by_video[video_path.name] = arr
         except Exception as e:
             print(f"Skipping video idx={i}, Caught exception: {e}")
 
     # Save all the data
     print(f"Saving skeleton data to {SKELETON_OUTPUT_PATH}")
-    with open(SKELETON_OUTPUT_PATH, 'wb') as f:
-        pickle.dump(video_skel, f)
-    print(f"Saving sarcopenia/normal data to {SARCOPENIA_LABELS_OUTPUT_PATH}")
-    with open(SARCOPENIA_LABELS_OUTPUT_PATH, 'w') as f:
-        f.writelines(f"{label}\n" for label in sarcopenia_labels)
-    print(f"Saving stable/unstable label data to {UNSTABLE_LABELS_OUTPUT_PATH}")
-    with open(UNSTABLE_LABELS_OUTPUT_PATH, 'w') as f:
-        f.writelines(f"{label}\n" for label in unstable_labels)
-    print(f"Saving paths data to {PATHS_OUTPUT_PATH}")
-    with open(PATHS_OUTPUT_PATH, 'w') as f:
-        f.writelines(f"{path}\n" for path in VIDEOS)
-    print(f"Saving subject data to {SUBJECT_OUTPUT_PATH}")
-    with open(SUBJECT_OUTPUT_PATH, 'w') as f:
-        f.writelines(f"{subject}\n" for subject in subjects)
+    np.savez(SKELETON_OUTPUT_PATH, **skel_by_video)
 
 if __name__ == "__main__":
     main()
