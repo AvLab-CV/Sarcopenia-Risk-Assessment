@@ -8,10 +8,6 @@ from sklearn.metrics import auc, roc_curve
 from scipy.stats import chi2_contingency, ttest_ind
 from tqdm import tqdm
 
-# DEFAULT_CSV = Path(
-#     "/Users/aldo/Code/avlab/SkateFormer_synced/work_dir/20251210_0105/"
-#     "partition1/sliding_window/sliding_window_windowsize64_stride8.csv"
-# )
 DEFAULT_CSV = Path()
 DEFAULT_FPS = 30
 
@@ -240,7 +236,6 @@ def print_metrics_report(
 
 
 def main():
-    # --- User-provided paths (fill these in) ---
     mapping_csv = Path("csvs/sliding_window_subject_idx_to_subject_id.csv")
     sliding_window_csvs = [
         Path("/Users/aldo/Code/avlab/SkateFormer_synced/work_dir/20251210_0105/partition1/sliding_window/sliding_window_windowsize64_stride8.csv"),

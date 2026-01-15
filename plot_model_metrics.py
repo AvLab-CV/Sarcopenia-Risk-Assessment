@@ -1,5 +1,4 @@
 import argparse
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -17,10 +16,7 @@ from sklearn.metrics import (
 )
 from tensorboard.backend.event_processing import event_accumulator
 
-WORK_DIR = Path("/Users/aldo/Code/avlab/SkateFormer_synced/work_dir")
 LOG_SUBDIR = Path("runs/train")
-REPORT_ROOT = Path("output/reports")
-PLOTS_ROOT = Path("output/plots")
 
 @dataclass(frozen=True)
 class PartitionSpec:
@@ -67,7 +63,7 @@ class LossCurves:
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("dt", type=str)
+    parser.add_argument("dt_dir", type=Path, help="Path to training run work_dir e.g. skateformer/work_dir/train")
     parser.add_argument(
         "--use-best",
         action="store_true",
@@ -152,8 +148,7 @@ def read_partition_description(base_dir: Path, partition_name: str) -> str:
     return partition_name
 
 
-def build_partitions(dt: str) -> List[PartitionSpec]:
-    dt_dir = WORK_DIR / dt
+def build_partitions(dt_dir: str) -> List[PartitionSpec]:
     if not dt_dir.exists():
         raise FileNotFoundError(f"Missing directory {dt_dir}")
 
@@ -297,7 +292,7 @@ def plot_loss(run_i: int, curves: LossCurves, use_last_eval: bool):
     axs[1].legend()
     axs[1].grid(True)
 
-    fig.suptitle(f"Run {run_i} — Best val_acc at epoch {best_epoch} ({best_acc:.4f})")
+    fig.suptitle(f"Run {run_i} - Best val_acc at epoch {best_epoch} ({best_acc:.4f})")
     fig.tight_layout()
     return fig
 
@@ -462,7 +457,7 @@ def plot_average_results(results: List[PartitionResult], output_dir: Path):
             axes[0].text(j, i, f"{avg_cm[i, j]:.1f}", ha="center", va="center")
 
     axes[1].plot(xs, avg_tpr, label="Avg ROC")
-    # Shade ±1 standard deviation band around the mean ROC, if available
+    # Shade +-1 standard deviation band around the mean ROC, if available
     upper = np.clip(avg_tpr + std_tpr, 0.0, 1.0)
     lower = np.clip(avg_tpr - std_tpr, 0.0, 1.0)
     if not np.allclose(upper, lower):
@@ -472,7 +467,7 @@ def plot_average_results(results: List[PartitionResult], output_dir: Path):
             upper,
             color="tab:blue",
             alpha=0.2,
-            label="±1 SD",
+            label="+-1 SD",
         )
     axes[1].plot([0, 1], [0, 1], linestyle="--", color="gray", alpha=0.5)
     axes[1].set_title("Averaged ROC Curve")
@@ -482,10 +477,10 @@ def plot_average_results(results: List[PartitionResult], output_dir: Path):
     axes[1].grid(True, alpha=0.3)
 
     text = (
-        f"Accuracy:  {avg_metrics['accuracy']:.3f} ± {std_metrics['accuracy']:.3f}\n"
-        f"Precision: {avg_metrics['precision']:.3f} ± {std_metrics['precision']:.3f}\n"
-        f"Recall:    {avg_metrics['recall']:.3f} ± {std_metrics['recall']:.3f}\n"
-        f"ROC-AUC:   {avg_metrics['roc_auc']:.3f} ± {std_metrics['roc_auc']:.3f}"
+        f"Accuracy:  {avg_metrics['accuracy']:.3f} +- {std_metrics['accuracy']:.3f}\n"
+        f"Precision: {avg_metrics['precision']:.3f} +- {std_metrics['precision']:.3f}\n"
+        f"Recall:    {avg_metrics['recall']:.3f} +- {std_metrics['recall']:.3f}\n"
+        f"ROC-AUC:   {avg_metrics['roc_auc']:.3f} +- {std_metrics['roc_auc']:.3f}"
     )
     axes[1].text(
         0.65,
@@ -589,220 +584,116 @@ def plot_aggregate_results(results: List[PartitionResult], output_dir: Path):
     return {"cm": agg_cm, "metrics": metrics}
 
 
-def build_partition_sections(
-    results: List[PartitionResult],
-    evaluated_on: str,
-    output_dir: Path,
-) -> str:
-    if not results:
-        return ""
+def _fmt_count_pct(count: int, pct_val: float) -> str:
+    return f"{int(count)} ({pct_val:.1f}%)"
 
-    base = output_dir.as_posix()
-    sections = []
-    for idx, res in enumerate(results):
-        stats_rows = []
+
+def print_partition_split_stats(results: List[PartitionResult]) -> None:
+    """Print per-partition split composition table (subjects/clips)."""
+    for res in sorted(results, key=lambda r: r.spec.idx):
+        print(f"\n== {res.spec.display_name} - Split stats ==")
+        rows = []
         for s in res.split_stats:
-            stats_rows.append(
-                f"[{s['split']}], "
-                f"[{s['subjects']} ({s['subjects_pct']:.1f}%)], "
-                f"[{s['sarcopenia']} ({s['sarcopenia_pct']:.1f}%)], "
-                f"[{s['normal']} ({s['normal_pct']:.1f}%)], "
-                f"[{s['clips']}], "
-                f"[{s['unstable']} ({s['unstable_pct']:.1f}%)], "
-                f"[{s['stable']} ({s['stable_pct']:.1f}%)], "
+            rows.append(
+                {
+                    "Split": s["split"],
+                    "Subjects": _fmt_count_pct(s["subjects"], s["subjects_pct"]),
+                    "Sarcopenia": _fmt_count_pct(s["sarcopenia"], s["sarcopenia_pct"]),
+                    "Normal": _fmt_count_pct(s["normal"], s["normal_pct"]),
+                    "Clips": int(s["clips"]),
+                    "Unstable": _fmt_count_pct(s["unstable"], s["unstable_pct"]),
+                    "Stable": _fmt_count_pct(s["stable"], s["stable_pct"]),
+                }
             )
-        stats_table_content = "\n    ".join(stats_rows)
-
-        section = f"""
-=== {res.spec.display_name}
-
-{evaluated_on}
-
-#table(
-  columns: 7,
-  [Split], [Total Subj], [Sarcopenia], [Normal], [Total Clips], [Unstable], [Stable],
-  {stats_table_content}
-)
-
-#image("{base}/run{res.spec.idx}_cm.pdf")
-#image("{base}/run{res.spec.idx}_loss.pdf")
-""".strip()
-        if idx < len(results) - 1:
-            section += "\n#pagebreak()"
-        sections.append(section)
-
-    return "\n\n".join(sections)
+        df = pd.DataFrame(
+            rows,
+            columns=["Split", "Subjects", "Sarcopenia", "Normal", "Clips", "Unstable", "Stable"],
+        )
+        print(df.to_string(index=False))
 
 
-def build_partition_table(results: List[PartitionResult]) -> str:
+def print_partition_comparison_table(results: List[PartitionResult]) -> None:
+    """Print a cross-partition comparison table (test set)."""
     if not results:
-        return ""
+        return
 
-    # Collect all metric values to find max for each
-    all_accuracies = [res.metrics['accuracy'] for res in results]
-    all_precisions = [res.metrics['precision'] for res in results]
-    all_recalls = [res.metrics['recall'] for res in results]
-    all_aucs = [res.metrics['roc_auc'] for res in results]
+    ordered = sorted(results, key=lambda r: r.spec.idx)
+    metrics_cols = ["accuracy", "precision", "recall", "roc_auc"]
+    best = {k: max(res.metrics[k] for res in ordered) for k in metrics_cols}
 
-    max_acc = max(all_accuracies)
-    max_prec = max(all_precisions)
-    max_rec = max(all_recalls)
-    max_auc = max(all_aucs)
-
-    def fmt_val(val: float, max_val: float) -> str:
+    def fmt_metric(val: float, key: str) -> str:
         s = f"{val:.3f}"
-        return f"*{s}*" if val == max_val else s
+        return f"*{s}*" if val == best[key] else s
 
     rows = []
-    for res in results:
+    for res in ordered:
         test_stats = next((s for s in res.split_stats if s["split"] == "test"), None)
-        if test_stats:
-            sarc_pct = test_stats["sarcopenia_pct"]
-            unstable_pct = test_stats["unstable_pct"]
-        else:
-            sarc_pct = 0.0
-            unstable_pct = 0.0
-
-        metrics = res.metrics
+        sarc_pct = float(test_stats["sarcopenia_pct"]) if test_stats else 0.0
+        unstable_pct = float(test_stats["unstable_pct"]) if test_stats else 0.0
         rows.append(
-            f"[{res.spec.partition_label}], "
-            f"[{fmt_val(metrics['accuracy'], max_acc)}], "
-            f"[{fmt_val(metrics['precision'], max_prec)}], "
-            f"[{fmt_val(metrics['recall'], max_rec)}], "
-            f"[{fmt_val(metrics['roc_auc'], max_auc)}], "
-            f"[{sarc_pct:.1f}%], "
-            f"[{unstable_pct:.1f}%],"
+            {
+                "Partition": res.spec.partition_label,
+                "Accuracy": fmt_metric(res.metrics["accuracy"], "accuracy"),
+                "Precision": fmt_metric(res.metrics["precision"], "precision"),
+                "Recall": fmt_metric(res.metrics["recall"], "recall"),
+                "ROC-AUC": fmt_metric(res.metrics["roc_auc"], "roc_auc"),
+                "Test Sarc%": f"{sarc_pct:.1f}%",
+                "Test Unstable%": f"{unstable_pct:.1f}%",
+            }
         )
 
-    rows_text = "\n  ".join(rows)
-    return f"""
-== Partition comparison (Test Set)
+    print("\n== Partition comparison (Test set) ==")
+    df = pd.DataFrame(
+        rows,
+        columns=[
+            "Partition",
+            "Accuracy",
+            "Precision",
+            "Recall",
+            "ROC-AUC",
+            "Test Sarc%",
+            "Test Unstable%",
+        ],
+    )
+    print(df.to_string(index=False))
+    print("\n(* indicates best across partitions for that metric.)")
 
-#table(
-  columns: 7,
-  [Partition], [Accuracy], [Precision], [Recall], [ROC-AUC], [Test Sarc%], [Test Unstable%],
-  {rows_text}
-)
-""".strip()
 
-
-def build_aggregate_section(
-    aggregate_info: Optional[Dict],
-    results: List[PartitionResult],
-    output_dir: Path,
-) -> str:
+def print_aggregate_table(aggregate_info: Optional[Dict], results: List[PartitionResult]) -> None:
+    """Print aggregate metrics (pooled predictions) and mean+-SD across folds."""
     if not aggregate_info:
-        return ""
+        return
 
     metrics = aggregate_info["metrics"]
 
-    # Also compute mean ± SD across folds for comparison
-    if results:
-        accuracies = np.array(
-            [res.metrics["accuracy"] for res in results],
-            dtype=float,
-        )
-        precisions = np.array(
-            [res.metrics["precision"] for res in results],
-            dtype=float,
-        )
-        recalls = np.array(
-            [res.metrics["recall"] for res in results],
-            dtype=float,
-        )
-        aucs = np.array(
-            [res.metrics["roc_auc"] for res in results],
-            dtype=float,
-        )
-
-        def mean_std(values: np.ndarray) -> (float, float):
-            if values.size == 0:
-                return 0.0, 0.0
-            if values.size == 1:
-                return float(values[0]), 0.0
-            return float(values.mean()), float(values.std(ddof=1))
-
-        mean_acc, std_acc = mean_std(accuracies)
-        mean_prec, std_prec = mean_std(precisions)
-        mean_rec, std_rec = mean_std(recalls)
-        mean_auc, std_auc = mean_std(aucs)
-    else:
-        mean_acc = std_acc = mean_prec = std_prec = 0.0
-        mean_rec = std_rec = mean_auc = std_auc = 0.0
-
-    base = output_dir.as_posix()
-    rows = "\n  ".join(
-        [
-            f"[Accuracy], [{metrics['accuracy']:.3f}], "
-            f"[{mean_acc:.3f} ± {std_acc:.3f}],",
-            f"[Precision], [{metrics['precision']:.3f}], "
-            f"[{mean_prec:.3f} ± {std_prec:.3f}],",
-            f"[Recall], [{metrics['recall']:.3f}], "
-            f"[{mean_rec:.3f} ± {std_rec:.3f}],",
-            f"[ROC-AUC], [{metrics['roc_auc']:.3f}], "
-            f"[{mean_auc:.3f} ± {std_auc:.3f}],",
-        ]
-    )
-
-    return f"""
-== Aggregate across folds
-
-Metrics below pool every prediction collected from all partitions to produce a single
-confusion matrix and ROC curve, highlighting the overall cross-validation performance.
-
-#table(
-  columns: 3,
-  [Metric], [Aggregate], [Mean ± SD across folds],
-  {rows}
-)
-
-#image("{base}/agg_cm.pdf")
-""".strip()
-
-
-def build_latex_cv_table(results: List[PartitionResult]) -> str:
-    if not results:
-        return ""
-
     ordered = sorted(results, key=lambda r: r.spec.idx)
-    accs = [res.metrics["accuracy"] for res in ordered]
-    aucs = [res.metrics["roc_auc"] for res in ordered]
-    rows = []
-    for res in ordered:
-        acc = res.metrics["accuracy"]
-        auc = res.metrics["roc_auc"]
-        test_samples = len(res.y_true)
-        rows.append(
-            f"Fold {res.spec.idx} & {acc:.3f} & {auc:.3f} & {test_samples} \\\\"
-        )
+    accuracies = np.array([res.metrics["accuracy"] for res in ordered], dtype=float)
+    precisions = np.array([res.metrics["precision"] for res in ordered], dtype=float)
+    recalls = np.array([res.metrics["recall"] for res in ordered], dtype=float)
+    aucs = np.array([res.metrics["roc_auc"] for res in ordered], dtype=float)
 
-    def mean_std(values: List[float]) -> (float, float):
-        if not values:
+    def mean_std(values: np.ndarray) -> (float, float):
+        if values.size == 0:
             return 0.0, 0.0
-        if len(values) == 1:
+        if values.size == 1:
             return float(values[0]), 0.0
-        return float(np.mean(values)), float(np.std(values, ddof=1))
+        return float(values.mean()), float(values.std(ddof=1))
 
-    mean_acc, std_acc = mean_std(accs)
+    mean_acc, std_acc = mean_std(accuracies)
+    mean_prec, std_prec = mean_std(precisions)
+    mean_rec, std_rec = mean_std(recalls)
     mean_auc, std_auc = mean_std(aucs)
 
-    table_lines = [
-        r"\begin{table}[h]",
-        r"\centering",
-        r"\caption{Clip-level classification performance across 3-fold cross-validation.}",
-        r"\label{tab:cv_results}",
-        r"\begin{tabular}{lccc}",
-        r"\toprule",
-        r"\textbf{Fold} & \textbf{Accuracy} & \textbf{ROC-AUC} & \textbf{Test Samples} \\",
-        r"\midrule",
-        *rows,
-        r"\midrule",
-        f"Mean ± SD & {mean_acc:.3f} ± {std_acc:.3f} & {mean_auc:.3f} ± {std_auc:.3f} & -- \\\\",
-        r"\bottomrule",
-        r"\end{tabular}",
-        r"\end{table}",
+    rows = [
+        {"Metric": "Accuracy", "Aggregate": f"{metrics['accuracy']:.3f}", "Mean +- SD": f"{mean_acc:.3f} +- {std_acc:.3f}"},
+        {"Metric": "Precision", "Aggregate": f"{metrics['precision']:.3f}", "Mean +- SD": f"{mean_prec:.3f} +- {std_prec:.3f}"},
+        {"Metric": "Recall", "Aggregate": f"{metrics['recall']:.3f}", "Mean +- SD": f"{mean_rec:.3f} +- {std_rec:.3f}"},
+        {"Metric": "ROC-AUC", "Aggregate": f"{metrics['roc_auc']:.3f}", "Mean +- SD": f"{mean_auc:.3f} +- {std_auc:.3f}"},
     ]
-    return "\n".join(table_lines)
+
+    print("\n== Aggregate across folds (pooled predictions) ==")
+    df = pd.DataFrame(rows, columns=["Metric", "Aggregate", "Mean +- SD"])
+    print(df.to_string(index=False))
 
 
 def plot_combined_figure(
@@ -847,7 +738,7 @@ def plot_combined_figure(
             curves = loss_curves_by_idx[res.spec.idx]
             ax_loss.plot(curves.epochs, curves.train_loss, label="loss")
             ax_loss.plot(curves.epochs, curves.val_loss, label="val_loss")
-            ax_loss.set_title(f"Loss curves — Fold {res.spec.idx}")
+            ax_loss.set_title(f"Loss curves - Fold {res.spec.idx}")
             ax_loss.set_xlabel("Epoch")
             ax_loss.set_ylabel("Loss")
             ax_loss.legend()
@@ -888,61 +779,11 @@ def save_metrics_csv(results: List[PartitionResult], output_dir: Path):
     print(f"Saved partition metrics to {metrics_path}")
 
 
-def load_training_config(path: Path) -> str:
-    return path.read_text(encoding="utf-8")
-
-
-def build_typst_source(
-    dt: str,
-    training_config: str,
-    partition_sections: str,
-    comparison_section: str,
-    aggregate_section: str,
-) -> str:
-    return f"""
-= Partitioning results
-
-*Using {dt}.*
-
-The partitioning was done using the "Double-Stratified" strategy.
-
-== Training results
-
-Accuracy, precision, recall and ROC-AUC (for unstable) are included in each ROC curve plot on the right.
-
-{partition_sections}
-
-{comparison_section}
-
-{aggregate_section}
-
-== Training config
-
-All partitions use the same configuration, except for the used dataset.
-
-```yaml
-{training_config}
-```
-
-""".strip()
-
-
-def compile_typst_report(typst_source: str, output_path: Path):
-    proc = subprocess.run(
-        ["typst", "c", "-", str(output_path / "report.pdf"), "--open"],
-        input=typst_source.encode("utf-8"),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-    print("Compiled report. stderr:", proc.stderr.decode())
-
-
 def main():
     args = parse_args()
-    dt = args.dt
-    partitions = build_partitions(dt)
-    output_dir = REPORT_ROOT / dt
+    dt_dir = args.dt_dir
+    partitions = build_partitions(dt_dir)
+    output_dir = dt_dir / "report"
     output_dir.mkdir(parents=True, exist_ok=True)
     loss_curves_by_idx: Dict[int, LossCurves] = {}
     use_last = not args.use_best
@@ -983,31 +824,14 @@ def main():
     aggregate_info = plot_aggregate_results(results, output_dir)
     save_metrics_csv(results, output_dir)
 
-    latex_table = build_latex_cv_table(results)
-    if latex_table:
-        print("\nLaTeX CV results table:\n")
-        print(latex_table)
-        print()
+    evaluated_on = "last epoch" if use_last else "best epoch"
+    print(f"\nEvaluated on {evaluated_on}.")
+    print_partition_split_stats(results)
+    print_partition_comparison_table(results)
+    print_aggregate_table(aggregate_info, results)
 
-    combined_fig_path = PLOTS_ROOT / "cv_combined.pdf"
+    combined_fig_path = output_dir / "cv_combined.pdf"
     plot_combined_figure(results, loss_curves_by_idx, combined_fig_path)
-
-    evaluated_on = (
-        "Evaluated on *last* epoch." if use_last else "Evaluated on *best* epoch."
-    )
-    partition_sections = build_partition_sections(results, evaluated_on, output_dir)
-    comparison_section = build_partition_table(results)
-    aggregate_section = build_aggregate_section(aggregate_info, results, output_dir)
-    training_config = load_training_config(WORK_DIR / dt / "base_config.yaml")
-    typst_source = build_typst_source(
-        dt,
-        training_config,
-        partition_sections,
-        comparison_section,
-        aggregate_section,
-    )
-
-    compile_typst_report(typst_source, output_dir)
 
 
 if __name__ == "__main__":
