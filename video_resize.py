@@ -1,11 +1,16 @@
+import argparse
 import subprocess
 from pathlib import Path
 
-# =========================
-# CONFIGURATION CONSTANTS
-# =========================
-INPUT_DIR = Path("/media/Eason/TMU_dataset/tandemgait_full_164")
-OUTPUT_DIR = Path("/media/Eason/TMU_dataset/tandemgait_full_164_resized700x700")
+parser = argparse.ArgumentParser()
+parser.add_argument("input_dir", required=True)
+parser.add_argument("output_dir", required=True)
+args = parser.parse_args()
+
+# INPUT_DIR = Path("/media/Eason/TMU_dataset/tandemgait_full_164")
+# OUTPUT_DIR = Path("/media/Eason/TMU_dataset/tandemgait_full_164_resized700x700")
+INPUT_DIR = args.input_dir
+OUTPUT_DIR = args.output_dir
 
 TARGET_WIDTH = 700
 TARGET_HEIGHT = 700
@@ -16,7 +21,7 @@ PRESET = "veryfast"
 # =========================
 
 def main():
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     print(f"Processing videos in {INPUT_DIR}...")
 
