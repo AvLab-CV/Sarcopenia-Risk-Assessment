@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import itertools
 from pathlib import Path
-from typing import Iterable, List, Sequence
+from typing import Iterable, List, Sequence, Dict, Set
 
 import cv2
 import einops
@@ -11,76 +11,54 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.animation import FuncAnimation
 from matplotlib.lines import Line2D
-from mpl_toolkits.mplot3d import Axes3D
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 - needed for 3D projection
 from mpl_toolkits.mplot3d.art3d import Line3DCollection, Path3DCollection
+
 from seq_transformation import seq_translation
+from zeni import SkeletonGaitAnalysis
 
-SKELETON_CONNECTIONS_KINECT = np.array(
-    [
-        # Torso
-        [0, 1],
-        [1, 20],
-        [20, 2],
-        [2, 3],
-        # Left Arm
-        [2, 4],
-        [4, 5],
-        [5, 6],
-        [6, 7],
-        [7, 21],
-        [7, 22],
-        # Right Arm
-        [2, 8],
-        [8, 9],
-        [9, 10],
-        [10, 11],
-        [11, 23],
-        [11, 24],
-        # Left Leg
-        [0, 12],
-        [12, 13],
-        [13, 14],
-        [14, 15],
-        # Right Leg
-        [0, 16],
-        [16, 17],
-        [17, 18],
-        [18, 19],
-    ],
-    dtype=int,
-)
 
-# Human3.6M 17-joint layout (Martinez et al. ordering: 0–16).
-# 0:pelvis, 1:r-hip, 2:r-knee, 3:r-ankle, 4:l-hip, 5:l-knee, 6:l-ankle,
-# 7:spine, 8:thorax, 9:neck/nose, 10:head, 11:l-shoulder, 12:l-elbow,
-# 13:l-wrist, 14:r-shoulder, 15:r-elbow, 16:r-wrist
-SKELETON_CONNECTIONS_H36M = np.array(
-    [
-        [0, 1],
-        [1, 2],
-        [2, 3],
-        [0, 4],
-        [4, 5],
-        [5, 6],
-        [0, 7],
-        [7, 8],
-        [8, 9],
-        [9, 10],
-        [8, 11],
-        [11, 12],
-        [12, 13],
-        [8, 14],
-        [14, 15],
-        [15, 16],
-    ],
-    dtype=int,
-)
-
-SKELETON_CONNECTION_MAP = {
-    "kinect_v2": SKELETON_CONNECTIONS_KINECT,
-    "h36m": SKELETON_CONNECTIONS_H36M,
-}
+# Skeleton layout (NTU-like, matching visualize_skeleton.py)
+SKELETON_CONNECTIONS = [
+    # Torso
+    [0, 1],
+    [1, 20],
+    [20, 2],
+    [2, 3],
+    # Left Arm
+    [2, 4],
+    [4, 5],
+    [5, 6],
+    [6, 7],
+    [7, 21],
+    [7, 22],
+    # Right Arm
+    [2, 8],
+    [8, 9],
+    [9, 10],
+    [10, 11],
+    [11, 23],
+    [11, 24],
+    # Left Leg
+    [0, 12],
+    [12, 13],
+    [13, 14],
+    [14, 15],
+    # Right Leg
+    [0, 16],
+    [16, 17],
+    [17, 18],
+    [18, 19],
+]
+SKELETON_CONNECTIONS = np.array(SKELETON_CONNECTIONS)
 COLOR_MAP = plt.cm.get_cmap("tab10")
+
+# Joint indices for gait analysis (NTU convention)
+SPINE_BASE = 0  # pelvis / sacrum proxy
+LEFT_ANKLE = 14
+LEFT_FOOT = 15
+RIGHT_ANKLE = 18
+RIGHT_FOOT = 19
 
 
 def _ensure_skeleton_list(
@@ -94,40 +72,47 @@ def _ensure_skeleton_list(
 
 
 def _normalize_skeleton(skeleton: np.ndarray) -> np.ndarray:
+    """Match the normalization used in visualize_skeleton.py.
+
+    - Accepts (T, J, 3) or (T, J*3)
+    - Translates sequence so root joint is centered using seq_translation.
+    """
     if skeleton.ndim == 3 and skeleton.shape[-1] == 3:
         skeleton = einops.rearrange(skeleton, "frame joint coord -> frame (joint coord)")
-    # skeleton = seq_translation(skeleton[None])[0]
-    skeleton = einops.rearrange(skeleton, "frame (joint coord) -> frame joint coord", coord=3)
-
-    # metrabs:
-    # skeleton -= skeleton[0,0,:]
-    # skeleton = skeleton[:,:,[0,2,1]]
-    # skeleton[:,:,2] *= -1
-    return skeleton
+    skeleton = seq_translation(skeleton[None])[0]
+    return einops.rearrange(skeleton, "frame (joint coord) -> frame joint coord", coord=3)
 
 
-def visualize_skeleton(
+def visualize_skeleton_with_gait_events(
     skeletons: Sequence[np.ndarray] | np.ndarray,
     clip_names: Sequence[str] | None = None,
     video_root: Path | None = None,
     repeat: bool = True,
     figure: plt.Figure | None = None,
     block: bool = True,
-    skeleton_type: str = "kinect_v2",
 ) -> None:
-    if skeleton_type not in SKELETON_CONNECTION_MAP:
-        raise ValueError(f"Unknown skeleton_type '{skeleton_type}'. Expected one of {list(SKELETON_CONNECTION_MAP)}.")
-    connections = SKELETON_CONNECTION_MAP[skeleton_type]
+    """Visualize skeleton(s) and overlay gait events estimated via Zeni et al.
+
+    Arguments mirror visualize_skeleton.visualize_skeleton.
+    - HS/TO events are shown on feet:
+        * Left HS:  red marker on left ankle
+        * Left TO:  blue marker on left foot
+        * Right HS: magenta marker on right ankle
+        * Right TO: cyan marker on right foot
+    """
 
     skels = _ensure_skeleton_list(skeletons)
     if not skels:
         raise ValueError("No skeletons provided.")
 
+    # Normalize skeletons as in the original visualizer
     skels = [_normalize_skeleton(skel) for skel in skels]
+
     clip_names = list(clip_names) if clip_names is not None else [f"clip_{i}" for i in range(len(skels))]
     if len(clip_names) != len(skels):
         raise ValueError("clip_names must match the number of skeletons.")
 
+    # --- Video lookup (same behaviour as visualize_skeleton.py) ---
     show_video = video_root is not None
     video_lookup: dict[str, Path] = {}
     if show_video:
@@ -141,7 +126,7 @@ def visualize_skeleton(
     primary_video_idx = next((idx for idx, path in enumerate(video_paths) if path and path.exists()), None)
 
     max_frames = max(skel.shape[0] for skel in skels)
-    skel_lines = [skel[:, connections, :] for skel in skels]
+    skel_lines = [skel[:, SKELETON_CONNECTIONS, :] for skel in skels]
 
     fig = figure if figure is not None else plt.figure()
     saved_view = None
@@ -163,10 +148,9 @@ def visualize_skeleton(
         ax = fig.add_subplot(1, 1, 1, projection="3d")
         ax2 = image = None
 
-    S = 1
-    ax.set_xlim(-S, S)
-    ax.set_ylim(-S, S)
-    ax.set_zlim(-S+1, S+1)
+    ax.set_xlim(-1, 1)
+    ax.set_ylim(-1, 1)
+    ax.set_zlim(0, 2)
     ax.set_xlabel("X")
     ax.set_ylabel("Y")
     ax.set_zlabel("Z")
@@ -183,6 +167,38 @@ def visualize_skeleton(
     lines: List[Line3DCollection] = []
     legend_handles: List[Line2D] = []
 
+    # --- Gait analysis (Zeni) ---
+    gait = SkeletonGaitAnalysis(fps=30)
+    gait_events: List[Dict[str, Set[int]]] = []
+
+    for idx, skel in enumerate(skels):
+        # Estimate events for left and right legs
+        sacrum_pos = skel[:, SPINE_BASE, :]
+
+        l_heel = skel[:, LEFT_ANKLE, :]
+        l_toe = skel[:, LEFT_FOOT, :]
+        r_heel = skel[:, RIGHT_ANKLE, :]
+        r_toe = skel[:, RIGHT_FOOT, :]
+
+        l_hs, l_to = gait.detect_events_zeni(l_heel, l_toe, sacrum_pos)
+        r_hs, r_to = gait.detect_events_zeni(r_heel, r_toe, sacrum_pos)
+
+        events_for_clip: Dict[str, Set[int]] = {
+            "l_hs": set(l_hs.tolist()),
+            "l_to": set(l_to.tolist()),
+            "r_hs": set(r_hs.tolist()),
+            "r_to": set(r_to.tolist()),
+        }
+        gait_events.append(events_for_clip)
+
+        # Quick textual summary in frames
+        print(f"Clip '{clip_names[idx]}':")
+        print(f"  Left HS frames:  {sorted(events_for_clip['l_hs'])}")
+        print(f"  Left TO frames:  {sorted(events_for_clip['l_to'])}")
+        print(f"  Right HS frames: {sorted(events_for_clip['r_hs'])}")
+        print(f"  Right TO frames: {sorted(events_for_clip['r_to'])}")
+
+    # --- Base skeleton artists ---
     for idx, skel in enumerate(skels):
         color = COLOR_MAP(idx % COLOR_MAP.N)
         pts = ax.scatter(*skel[0].T, color=color, s=10)
@@ -191,6 +207,21 @@ def visualize_skeleton(
         points.append(pts)
         lines.append(line)
         legend_handles.append(Line2D([0], [0], color=color, lw=2, label=clip_names[idx]))
+
+    # --- Event markers (always created; shown only on event frames) ---
+    event_markers: List[Dict[str, Path3DCollection]] = []
+    for _ in skels:
+        # Empty scatters that we'll move frame-by-frame
+        markers_for_clip = {
+            "l_hs": ax.scatter([], [], [], color="red", s=40, marker="o"),
+            "l_to": ax.scatter([], [], [], color="blue", s=40, marker="o"),
+            "r_hs": ax.scatter([], [], [], color="magenta", s=40, marker="o"),
+            "r_to": ax.scatter([], [], [], color="cyan", s=40, marker="o"),
+        }
+        event_markers.append(markers_for_clip)
+
+    # Track printed events so we don't spam during looping animations
+    printed_events: List[Set[tuple[str, int]]] = [set() for _ in skels]
 
     if len(legend_handles) > 1:
         ax.legend(handles=legend_handles, loc="upper right")
@@ -224,6 +255,45 @@ def visualize_skeleton(
                 skel[local_idx, :, 1],
                 skel[local_idx, :, 2],
             )
+
+            # Update gait event markers for this skeleton
+            events = gait_events[skel_idx]
+            markers = event_markers[skel_idx]
+            seen = printed_events[skel_idx]
+            clip_name = clip_names[skel_idx]
+
+            # Helper: show/hide marker at given joint if current frame is an event
+            def _update_marker(marker_key: str, joint_idx: int, label: str):
+                marker = markers[marker_key]
+                if local_idx in events[marker_key]:
+                    pos = skel[local_idx, joint_idx]
+                    marker._offsets3d = ([pos[0]], [pos[1]], [pos[2]])
+
+                    # Print once per event occurrence
+                    key = (marker_key, local_idx)
+                    if key not in seen:
+                        step_length = None
+                        if marker_key in {"l_hs", "r_hs"}:
+                            l_pos = skel[local_idx, LEFT_ANKLE, :]
+                            r_pos = skel[local_idx, RIGHT_ANKLE, :]
+                            step_length = float(np.linalg.norm(l_pos - r_pos))
+
+                        if step_length is not None:
+                            print(
+                                f"[{clip_name}] frame {local_idx}: {label} | step_length={step_length:.4f}"
+                            )
+                        else:
+                            print(f"[{clip_name}] frame {local_idx}: {label}")
+                        seen.add(key)
+                else:
+                    # Hide by moving to empty data
+                    marker._offsets3d = ([], [], [])
+
+            _update_marker("l_hs", LEFT_ANKLE, "Left HS")
+            _update_marker("l_to", LEFT_FOOT, "Left TO")
+            _update_marker("r_hs", RIGHT_ANKLE, "Right HS")
+            _update_marker("r_to", RIGHT_FOOT, "Right TO")
+
         _next_video_frame()
 
     interval_ms = 30
@@ -256,8 +326,9 @@ def visualize_skeleton(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Visualize skeleton sequences alongside source videos.")
-    parser = argparse.ArgumentParser(description="Visualize skeleton sequences alongside source videos.")
+    parser = argparse.ArgumentParser(
+        description="Visualize skeleton sequences with gait events (Zeni) alongside source videos."
+    )
     parser.add_argument(
         "npz_path",
         type=Path,
@@ -269,12 +340,6 @@ def main():
         nargs="?",
         help="Optional root directory containing source .mp4 files.",
     )
-    parser.add_argument(
-        "--skeleton-type",
-        choices=list(SKELETON_CONNECTION_MAP.keys()),
-        default="kinect_v2",
-        help="Skeleton layout to use when drawing (default: kinect_v2).",
-    )
     args = parser.parse_args()
 
     skel_dict = dict(np.load(args.npz_path))
@@ -282,16 +347,18 @@ def main():
         raise ValueError(f"No skeletons found in {args.npz_path}")
 
     fig = plt.figure()
-    for clip in skel_dict:
-        visualize_skeleton(
+    for clip in itertools.cycle(skel_dict):
+        visualize_skeleton_with_gait_events(
             [skel_dict[clip]],
             clip_names=[clip],
             video_root=args.video_root,
             repeat=False,
             figure=fig,
-            skeleton_type=args.skeleton_type,
         )
 
 
 if __name__ == "__main__":
     main()
+
+
+

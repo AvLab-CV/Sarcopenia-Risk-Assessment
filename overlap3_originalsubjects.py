@@ -19,12 +19,13 @@ from sklearn.metrics import roc_auc_score, roc_curve
 # df['stable_count']   = df['predictions'].map(lambda x: (x <= 0.5).sum())
 # df['unstable_count'] = df['predictions'].map(lambda x: (x  > 0.5).sum())
 
-df = pd.read_csv("csvs/subjects.csv")
+df = pd.read_csv("csvs/subjects.csv", index_col=0)
 print(df)
 df['subject_has_sarcopenia'] = df['sarcopenia-normal'] == 'sarcopenia'
 df['unstable_count'] = df['unstable']
 df['stable_count'] = df['stable']
 df['instability_rate'] = df['unstable_count'] / (df['stable_count'] + df['unstable_count'])
+df.to_csv("csvs/subjects_r.csv")
 
 # Your existing data
 normal_data = df.loc[df['subject_has_sarcopenia'] == 0, 'instability_rate'].values
@@ -74,8 +75,8 @@ ax.fill_between(r_values, 0, np.minimum(p_r_given_normal, p_r_given_sarco),
                 alpha=0.3, color='gray', label='Overlap')
 ax.set_xlabel('Instability rate (r)')
 ax.set_ylabel('Density')
-ax.set_xlim(0.0, 1.0)
-ax.set_ylim(0.0, 1.0)
+# ax.set_xlim(0.0, 1.0)
+# ax.set_ylim(0.0, 1.0)
 ax.set_title('Conditional distributions (KDE)')
 ax.legend()
 
@@ -90,14 +91,14 @@ ax.plot(r_values, P_sarco_given_r, 'red', lw=2)
 ax.axhline(P_sarco, color='black', linestyle='--', label=f'Prior P(sarco) = {P_sarco:.3f}')
 ax.set_xlabel('Instability rate (r)')
 ax.set_ylabel('P(sarcopenia | r)')
-ax.set_xlim(0.0, 1.0)
-ax.set_ylim(0.0, 1.0)
+# ax.set_xlim(0.0, 1.0)
+# ax.set_ylim(0.0, 1.0)
 ax.set_title('Posterior Probability of Sarcopenia')
 ax.legend()
 ax.grid(True, alpha=0.3)
 
 # Add reference lines
-ax.axhline(0.5, color='green', linestyle=':', alpha=0.5, label='50% threshold')
+# ax.axhline(0.5, color='green', linestyle=':', alpha=0.5, label='50% threshold')
 
 # 3. ROC Curve
 ax = axes[1, 0]

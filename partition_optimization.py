@@ -17,23 +17,62 @@ from typing import Dict
 import random
 
 
-def calculate_targets(df: pd.DataFrame, p_train: float, p_val: float, p_test: float) -> Dict:
-    """Calculate target clip counts and stable/unstable ratios."""
+def calculate_targets(df: pd.DataFrame, p_train: float, p_val: float, p_test: float, unstable_ratio: float = None) -> Dict:
+    """Calculate target clip counts and stable/unstable ratios, honoring feasibility constraints."""
     total_clips = df['clip_count'].sum()
     total_stable = df['stable'].sum()
     total_unstable = df['unstable'].sum()
     total_all = total_stable + total_unstable
     
-    unstable_ratio = total_unstable / total_all if total_all > 0 else 0
+    # Use provided ratio or calculate from dataset
+    if unstable_ratio is None:
+        unstable_ratio = total_unstable / total_all if total_all > 0 else 0
+    else:
+        # Validate provided ratio
+        if unstable_ratio < 0 or unstable_ratio > 1:
+            raise ValueError(f"unstable_ratio must be between 0 and 1, got {unstable_ratio}")
+    
+    # Target clip counts per split
+    split_clip_targets = {
+        'train': p_train * total_clips,
+        'val': p_val * total_clips,
+        'test': p_test * total_clips,
+    }
+    
+    # Desired (raw) unstable counts per split before feasibility adjustment
+    raw_unstable_targets = {
+        split: unstable_ratio * clips for split, clips in split_clip_targets.items()
+    }
+    total_raw_unstable = sum(raw_unstable_targets.values())
+    
+    # If we request more unstable clips than exist, scale targets down proportionally
+    if total_raw_unstable > total_unstable + 1e-6 and total_raw_unstable > 0:
+        unstable_target_scale = total_unstable / total_raw_unstable
+    else:
+        unstable_target_scale = 1.0
+    
+    split_unstable_targets = {
+        split: raw_unstable_targets[split] * unstable_target_scale
+        for split in split_clip_targets
+    }
+    
+    split_target_ratios = {
+        split: (split_unstable_targets[split] / split_clip_targets[split]
+                if split_clip_targets[split] > 0 else 0)
+        for split in split_clip_targets
+    }
     
     return {
         'total_clips': total_clips,
         'total_stable': total_stable,
         'total_unstable': total_unstable,
         'unstable_ratio': unstable_ratio,
-        'target_train_clips': p_train * total_clips,
-        'target_val_clips': p_val * total_clips,
-        'target_test_clips': p_test * total_clips,
+        'target_train_clips': split_clip_targets['train'],
+        'target_val_clips': split_clip_targets['val'],
+        'target_test_clips': split_clip_targets['test'],
+        'split_unstable_targets': split_unstable_targets,
+        'split_target_ratios': split_target_ratios,
+        'unstable_target_scale': unstable_target_scale,
     }
 
 
@@ -112,7 +151,8 @@ def assign_subjects_to_partitions(
     p_train: float,
     p_val: float,
     p_test: float,
-    random_seed: int = 42
+    random_seed: int = 42,
+    unstable_ratio: float = None
 ) -> pd.DataFrame:
     """
     Assign subjects to partitions and splits.
@@ -125,12 +165,39 @@ def assign_subjects_to_partitions(
     2. For each partition, assign validation sets from remaining subjects (minimize overlap)
     3. For each partition, assign all remaining subjects to training
     4. Balance clip counts and stable/unstable ratios
+    
+    Args:
+        df: DataFrame with subject data
+        num_partitions: Number of partitions to create
+        p_train: Proportion of clips for training
+        p_val: Proportion of clips for validation
+        p_test: Proportion of clips for testing
+        random_seed: Random seed for reproducibility
+        unstable_ratio: Optional desired unstable ratio. If None, calculated from dataset.
     """
     np.random.seed(random_seed)
     random.seed(random_seed)
     
-    targets = calculate_targets(df, p_train, p_val, p_test)
+    targets = calculate_targets(df, p_train, p_val, p_test, unstable_ratio)
     target_unstable_ratio = targets['unstable_ratio']
+    split_unstable_targets = targets['split_unstable_targets']
+    split_clip_targets = {
+        'train': targets['target_train_clips'],
+        'val': targets['target_val_clips'],
+        'test': targets['target_test_clips'],
+    }
+    
+    def get_dynamic_ratio(split_name: str, current_clips: float, current_unstable: float) -> float:
+        """Return the remaining-ratio needed for a split based on the residual budget."""
+        target_clips = split_clip_targets.get(split_name, 0)
+        target_unstable = split_unstable_targets.get(split_name, 0)
+        if target_clips <= 0:
+            return 0.0
+        remaining_clips = max(target_clips - current_clips, 1)
+        remaining_unstable = max(target_unstable - current_unstable, 0)
+        ratio = remaining_unstable / remaining_clips
+        # Clamp ratio to [0, 1] to keep selection stable
+        return max(0.0, min(1.0, ratio))
     
     # Create result dataframe - one row per subject per partition
     result_rows = []
@@ -175,12 +242,13 @@ def assign_subjects_to_partitions(
         current_test_stable = 0
         
         while current_test_clips < test_target * 0.98:
+            dynamic_ratio = get_dynamic_ratio('test', current_test_clips, current_test_unstable)
             # Select best subject that maintains ratio and hasn't been assigned to test yet
             best_idx, best_stable, best_unstable, best_clips = select_best_subject_for_ratio(
                 all_test_candidates,
                 current_test_stable,
                 current_test_unstable,
-                target_unstable_ratio,
+                dynamic_ratio,
                 subjects_in_test,
                 df
             )
@@ -227,13 +295,14 @@ def assign_subjects_to_partitions(
                 val_subjects_other_partitions.update(subjects_in_val[p])
         
         while current_val_clips < val_target * 0.98:
+            dynamic_ratio = get_dynamic_ratio('val', current_val_clips, current_val_unstable)
             # First try to find subjects not in val sets of other partitions
             excluded = set(partition_assignments[partition]['val']) | val_subjects_other_partitions
             best_idx, best_stable, best_unstable, best_clips = select_best_subject_for_ratio(
                 remaining_subjects,
                 current_val_stable,
                 current_val_unstable,
-                target_unstable_ratio,
+                dynamic_ratio,
                 excluded,
                 df
             )
@@ -241,11 +310,12 @@ def assign_subjects_to_partitions(
             # If no non-overlapping candidate, allow overlap but still maintain ratio
             if best_idx is None:
                 excluded = set(partition_assignments[partition]['val'])
+                dynamic_ratio = get_dynamic_ratio('val', current_val_clips, current_val_unstable)
                 best_idx, best_stable, best_unstable, best_clips = select_best_subject_for_ratio(
                     remaining_subjects,
                     current_val_stable,
                     current_val_unstable,
-                    target_unstable_ratio,
+                    dynamic_ratio,
                     excluded,
                     df
                 )
@@ -339,6 +409,7 @@ def print_partition_stats(result_df: pd.DataFrame, num_partitions: int, targets:
     print("\n" + "="*80)
     print("PARTITION STATISTICS")
     print("="*80)
+    split_target_ratios = targets.get('split_target_ratios', {})
     
     for p in range(num_partitions):
         partition_df = result_df[result_df['partition'] == p]
@@ -360,13 +431,14 @@ def print_partition_stats(result_df: pd.DataFrame, num_partitions: int, targets:
                 'val': targets['target_val_clips'],
                 'test': targets['target_test_clips']
             }[split]
+            target_ratio = split_target_ratios.get(split, targets['unstable_ratio'])
             
             clip_error = abs(clips - target_clips) / target_clips * 100 if target_clips > 0 else 0
-            ratio_error = abs(unstable_ratio - targets['unstable_ratio']) * 100
+            ratio_error = abs(unstable_ratio - target_ratio) * 100
             
             print(f"  {split:5s}: {len(split_df):3d} subjects, {clips:5.0f} clips "
                   f"(target: {target_clips:5.0f}, error: {clip_error:5.1f}%), "
-                  f"unstable ratio: {unstable_ratio:.3f} (target: {targets['unstable_ratio']:.3f}, "
+                  f"unstable ratio: {unstable_ratio:.3f} (target: {target_ratio:.3f}, "
                   f"error: {ratio_error:.2f}%)")
 
 
@@ -388,6 +460,9 @@ def main():
                        help='Proportion of clips for test set')
     parser.add_argument('--seed', type=int, default=42,
                        help='Random seed for reproducibility')
+    parser.add_argument('--unstable-ratio', type=float, default=None,
+                       help='Desired unstable ratio (0-1). If not provided, uses ratio from dataset. '
+                            'Note: May be impossible to achieve while satisfying no-overlap constraint.')
     
     args = parser.parse_args()
     
@@ -400,19 +475,36 @@ def main():
     df = pd.read_csv(args.input, index_col=0)
     print(f"Loaded {len(df)} subjects")
     
+    # Calculate dataset unstable ratio for comparison
+    total_stable = df['stable'].sum()
+    total_unstable = df['unstable'].sum()
+    total_all = total_stable + total_unstable
+    dataset_unstable_ratio = total_unstable / total_all if total_all > 0 else 0
+    
     # Calculate targets
-    targets = calculate_targets(df, args.p_train, args.p_val, args.p_test)
+    targets = calculate_targets(df, args.p_train, args.p_val, args.p_test, args.unstable_ratio)
     print(f"\nTargets:")
     print(f"  Total clips: {targets['total_clips']}")
     print(f"  Train clips: {targets['target_train_clips']:.1f} ({args.p_train*100:.1f}%)")
     print(f"  Val clips:   {targets['target_val_clips']:.1f} ({args.p_val*100:.1f}%)")
     print(f"  Test clips:  {targets['target_test_clips']:.1f} ({args.p_test*100:.1f}%)")
-    print(f"  Unstable ratio: {targets['unstable_ratio']:.3f}")
+    if args.unstable_ratio is None:
+        print(f"  Unstable ratio target: {targets['unstable_ratio']:.3f} (from dataset)")
+    else:
+        print(f"  Unstable ratio requested: {targets['unstable_ratio']:.3f}")
+        print(f"  Dataset unstable ratio:  {dataset_unstable_ratio:.3f}")
+        if targets.get('unstable_target_scale', 1.0) < 0.999:
+            print("  ⚠️  Requested ratio exceeds available unstable clips. "
+                  "Sharing deficit across splits.")
+    print(f"  Effective per-split unstable ratios:")
+    for split in ['train', 'val', 'test']:
+        effective_ratio = targets['split_target_ratios'][split]
+        print(f"    {split:5s}: {effective_ratio:.3f}")
     
     # Assign subjects to partitions
     print(f"\nAssigning subjects to {args.partitions} partitions...")
     result_df = assign_subjects_to_partitions(
-        df, args.partitions, args.p_train, args.p_val, args.p_test, args.seed
+        df, args.partitions, args.p_train, args.p_val, args.p_test, args.seed, args.unstable_ratio
     )
     
     # Validate partitions

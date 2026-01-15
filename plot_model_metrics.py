@@ -20,6 +20,7 @@ from tensorboard.backend.event_processing import event_accumulator
 WORK_DIR = Path("/Users/aldo/Code/avlab/SkateFormer_synced/work_dir")
 LOG_SUBDIR = Path("runs/train")
 REPORT_ROOT = Path("output/reports")
+PLOTS_ROOT = Path("output/plots")
 
 @dataclass(frozen=True)
 class PartitionSpec:
@@ -47,6 +48,21 @@ class PartitionResult:
     fpr: np.ndarray
     tpr: np.ndarray
     split_stats: List[Dict]
+    y_true: np.ndarray
+    y_pred: np.ndarray
+    y_scores: np.ndarray
+
+
+@dataclass
+class LossCurves:
+    epochs: List[int]
+    train_loss: List[float]
+    val_loss: List[float]
+    val_acc: List[float]
+    best_epoch: int
+    best_acc: float
+    eval_epoch: int
+    eval_acc: float
 
 
 def parse_args():
@@ -171,8 +187,10 @@ def build_partitions(dt: str) -> List[PartitionSpec]:
     return partitions
 
 
-def plot_loss(run_i, logdir, use_last_eval: bool):
-    """Plot training loss, validation loss, and validation accuracy per epoch."""
+def extract_loss_curves(
+    logdir: Path, use_last_eval: bool, run_label: str = ""
+) -> Optional[LossCurves]:
+    """Extract training/validation curves from TensorBoard logs."""
     ea = event_accumulator.EventAccumulator(str(logdir))
     ea.Reload()
 
@@ -207,7 +225,8 @@ def plot_loss(run_i, logdir, use_last_eval: bool):
             y_vacc.append(val_acc_by_step[step])
 
     if not epochs:
-        print(f"Warning: No valid epoch data found for run {run_i}")
+        label = f" {run_label}" if run_label else ""
+        print(f"Warning: No valid epoch data found for run{label}")
         return None
 
     # Find best epoch
@@ -217,6 +236,29 @@ def plot_loss(run_i, logdir, use_last_eval: bool):
     epoch_to_val_acc = dict(zip(epochs, y_vacc))
     eval_epoch = epochs[-1] if use_last_eval else best_epoch
     eval_acc = epoch_to_val_acc[eval_epoch]
+
+    return LossCurves(
+        epochs=epochs,
+        train_loss=y_loss,
+        val_loss=y_vloss,
+        val_acc=y_vacc,
+        best_epoch=best_epoch,
+        best_acc=best_acc,
+        eval_epoch=eval_epoch,
+        eval_acc=eval_acc,
+    )
+
+
+def plot_loss(run_i: int, curves: LossCurves, use_last_eval: bool):
+    """Plot training loss, validation loss, and validation accuracy per epoch."""
+    epochs = curves.epochs
+    y_loss = curves.train_loss
+    y_vloss = curves.val_loss
+    y_vacc = curves.val_acc
+    best_epoch = curves.best_epoch
+    best_acc = curves.best_acc
+    eval_epoch = curves.eval_epoch
+    eval_acc = curves.eval_acc
 
     # Plot
     fig, axs = plt.subplots(2, 1, figsize=(8, 6), sharex=True)
@@ -340,7 +382,7 @@ def plot_confusion_matrix_and_roc(partition: PartitionSpec, csv_path: Path, outp
         "recall": rec,
         "roc_auc": auc,
     }
-    return cm, fpr, tpr, metrics
+    return cm, fpr, tpr, metrics, y_true, y_pred, y_scores
 
 
 def evaluate_partition(
@@ -354,7 +396,9 @@ def evaluate_partition(
         print(f"Skipping {partition.display_name}: missing {results_file}")
         return None
 
-    cm, fpr, tpr, metrics = plot_confusion_matrix_and_roc(partition, results_file, output_dir)
+    cm, fpr, tpr, metrics, y_true, y_pred, y_scores = plot_confusion_matrix_and_roc(
+        partition, results_file, output_dir
+    )
     return PartitionResult(
         spec=partition,
         metrics=metrics,
@@ -362,6 +406,9 @@ def evaluate_partition(
         fpr=fpr,
         tpr=tpr,
         split_stats=split_stats,
+        y_true=y_true,
+        y_pred=y_pred,
+        y_scores=y_scores,
     )
 
 
@@ -370,18 +417,36 @@ def plot_average_results(results: List[PartitionResult], output_dir: Path):
         return
 
     avg_cm = np.mean([res.cm for res in results], axis=0)
-    avg_metrics = {
-        "accuracy": np.mean([res.metrics["accuracy"] for res in results]),
-        "precision": np.mean([res.metrics["precision"] for res in results]),
-        "recall": np.mean([res.metrics["recall"] for res in results]),
-        "roc_auc": np.mean([res.metrics["roc_auc"] for res in results]),
-    }
+
+    accuracies = np.array([res.metrics["accuracy"] for res in results], dtype=float)
+    precisions = np.array([res.metrics["precision"] for res in results], dtype=float)
+    recalls = np.array([res.metrics["recall"] for res in results], dtype=float)
+    aucs = np.array([res.metrics["roc_auc"] for res in results], dtype=float)
+
+    def mean_std(values: np.ndarray) -> (float, float):
+        if values.size == 0:
+            return 0.0, 0.0
+        if values.size == 1:
+            return float(values[0]), 0.0
+        return float(values.mean()), float(values.std(ddof=1))
+
+    avg_metrics = {}
+    std_metrics = {}
+    avg_metrics["accuracy"], std_metrics["accuracy"] = mean_std(accuracies)
+    avg_metrics["precision"], std_metrics["precision"] = mean_std(precisions)
+    avg_metrics["recall"], std_metrics["recall"] = mean_std(recalls)
+    avg_metrics["roc_auc"], std_metrics["roc_auc"] = mean_std(aucs)
 
     xs = np.linspace(0, 1, 200)
-    avg_tpr = np.mean(
+    tpr_samples = np.array(
         [np.interp(xs, res.fpr, res.tpr) for res in results],
-        axis=0,
+        dtype=float,
     )
+    avg_tpr = tpr_samples.mean(axis=0)
+    if tpr_samples.shape[0] > 1:
+        std_tpr = tpr_samples.std(axis=0, ddof=1)
+    else:
+        std_tpr = np.zeros_like(avg_tpr)
 
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
 
@@ -398,6 +463,18 @@ def plot_average_results(results: List[PartitionResult], output_dir: Path):
             axes[0].text(j, i, f"{avg_cm[i, j]:.1f}", ha="center", va="center")
 
     axes[1].plot(xs, avg_tpr, label="Avg ROC")
+    # Shade ±1 standard deviation band around the mean ROC, if available
+    upper = np.clip(avg_tpr + std_tpr, 0.0, 1.0)
+    lower = np.clip(avg_tpr - std_tpr, 0.0, 1.0)
+    if not np.allclose(upper, lower):
+        axes[1].fill_between(
+            xs,
+            lower,
+            upper,
+            color="tab:blue",
+            alpha=0.2,
+            label="±1 SD",
+        )
     axes[1].plot([0, 1], [0, 1], linestyle="--", color="gray", alpha=0.5)
     axes[1].set_title("Averaged ROC Curve")
     axes[1].set_xlabel("False Positive Rate")
@@ -406,10 +483,10 @@ def plot_average_results(results: List[PartitionResult], output_dir: Path):
     axes[1].grid(True, alpha=0.3)
 
     text = (
-        f"Accuracy:  {avg_metrics['accuracy']:.3f}\n"
-        f"Precision: {avg_metrics['precision']:.3f}\n"
-        f"Recall:    {avg_metrics['recall']:.3f}\n"
-        f"ROC-AUC:   {avg_metrics['roc_auc']:.3f}"
+        f"Accuracy:  {avg_metrics['accuracy']:.3f} ± {std_metrics['accuracy']:.3f}\n"
+        f"Precision: {avg_metrics['precision']:.3f} ± {std_metrics['precision']:.3f}\n"
+        f"Recall:    {avg_metrics['recall']:.3f} ± {std_metrics['recall']:.3f}\n"
+        f"ROC-AUC:   {avg_metrics['roc_auc']:.3f} ± {std_metrics['roc_auc']:.3f}"
     )
     axes[1].text(
         0.65,
@@ -428,6 +505,89 @@ def plot_average_results(results: List[PartitionResult], output_dir: Path):
     print(f"Saving to {out_jpg}")
     fig.savefig(out_jpg)
     plt.close(fig)
+
+
+def plot_aggregate_results(results: List[PartitionResult], output_dir: Path):
+    if not results:
+        return None
+
+    agg_cm = np.sum([res.cm for res in results], axis=0).astype(int)
+    all_true = np.concatenate([res.y_true for res in results])
+    all_pred = np.concatenate([res.y_pred for res in results])
+    all_scores = np.concatenate([res.y_scores for res in results])
+
+    total = agg_cm.sum()
+    tp = agg_cm[1, 1]
+    tn = agg_cm[0, 0]
+    fp = agg_cm[0, 1]
+    fn = agg_cm[1, 0]
+
+    accuracy = (tp + tn) / total if total else 0.0
+    precision = tp / (tp + fp) if (tp + fp) else 0.0
+    recall = tp / (tp + fn) if (tp + fn) else 0.0
+
+    if len(np.unique(all_true)) > 1:
+        fpr, tpr, _ = roc_curve(all_true, all_scores)
+        auc = roc_auc_score(all_true, all_scores)
+    else:
+        fpr = np.array([0.0, 1.0])
+        tpr = np.array([0.0, 1.0])
+        auc = float("nan")
+
+    metrics = {
+        "accuracy": accuracy,
+        "precision": precision,
+        "recall": recall,
+        "roc_auc": auc,
+    }
+
+    fig, axes = plt.subplots(1, 2, figsize=(7, 5))
+
+    axes[0].imshow(agg_cm, cmap="Blues")
+    axes[0].set_title("Aggregate Confusion Matrix")
+    axes[0].set_xticks([0, 1])
+    axes[0].set_yticks([0, 1])
+    axes[0].set_xticklabels(["stable (0)", "unstable (1)"])
+    axes[0].set_yticklabels(["stable (0)", "unstable (1)"])
+    axes[0].set_xlabel("Prediction")
+    axes[0].set_ylabel("Ground Truth")
+    for i in range(2):
+        for j in range(2):
+            axes[0].text(j, i, f"{agg_cm[i, j]:d}", ha="center", va="center")
+
+    axes[1].plot(fpr, tpr, label=f"ROC-AUC={auc:.3f}" if not np.isnan(auc) else "ROC")
+    axes[1].plot([0, 1], [0, 1], linestyle="--", color="gray", alpha=0.5)
+    axes[1].set_title("Aggregate ROC Curve")
+    axes[1].set_xlabel("False Positive Rate")
+    axes[1].set_ylabel("True Positive Rate")
+    axes[1].legend()
+    axes[1].grid(True, alpha=0.3)
+
+    text = (
+        f"Accuracy:  {accuracy:.3f}\n"
+        f"Precision: {precision:.3f}\n"
+        f"Recall:    {recall:.3f}\n"
+        f"ROC-AUC:   {auc:.3f}"
+    )
+    axes[1].text(
+        0.65,
+        0.25,
+        text,
+        transform=axes[1].transAxes,
+        fontsize=10,
+        bbox=dict(boxstyle="round", facecolor="white", alpha=0.7),
+    )
+
+    fig.tight_layout()
+    out_pdf = output_dir / "agg_cm.pdf"
+    print(f"Saving to {out_pdf}")
+    fig.savefig(out_pdf)
+    out_jpg = output_dir / "agg_cm.jpg"
+    print(f"Saving to {out_jpg}")
+    fig.savefig(out_jpg)
+    plt.close(fig)
+
+    return {"cm": agg_cm, "metrics": metrics}
 
 
 def build_partition_sections(
@@ -527,6 +687,181 @@ def build_partition_table(results: List[PartitionResult]) -> str:
 """.strip()
 
 
+def build_aggregate_section(
+    aggregate_info: Optional[Dict],
+    results: List[PartitionResult],
+    output_dir: Path,
+) -> str:
+    if not aggregate_info:
+        return ""
+
+    metrics = aggregate_info["metrics"]
+
+    # Also compute mean ± SD across folds for comparison
+    if results:
+        accuracies = np.array(
+            [res.metrics["accuracy"] for res in results],
+            dtype=float,
+        )
+        precisions = np.array(
+            [res.metrics["precision"] for res in results],
+            dtype=float,
+        )
+        recalls = np.array(
+            [res.metrics["recall"] for res in results],
+            dtype=float,
+        )
+        aucs = np.array(
+            [res.metrics["roc_auc"] for res in results],
+            dtype=float,
+        )
+
+        def mean_std(values: np.ndarray) -> (float, float):
+            if values.size == 0:
+                return 0.0, 0.0
+            if values.size == 1:
+                return float(values[0]), 0.0
+            return float(values.mean()), float(values.std(ddof=1))
+
+        mean_acc, std_acc = mean_std(accuracies)
+        mean_prec, std_prec = mean_std(precisions)
+        mean_rec, std_rec = mean_std(recalls)
+        mean_auc, std_auc = mean_std(aucs)
+    else:
+        mean_acc = std_acc = mean_prec = std_prec = 0.0
+        mean_rec = std_rec = mean_auc = std_auc = 0.0
+
+    base = output_dir.as_posix()
+    rows = "\n  ".join(
+        [
+            f"[Accuracy], [{metrics['accuracy']:.3f}], "
+            f"[{mean_acc:.3f} ± {std_acc:.3f}],",
+            f"[Precision], [{metrics['precision']:.3f}], "
+            f"[{mean_prec:.3f} ± {std_prec:.3f}],",
+            f"[Recall], [{metrics['recall']:.3f}], "
+            f"[{mean_rec:.3f} ± {std_rec:.3f}],",
+            f"[ROC-AUC], [{metrics['roc_auc']:.3f}], "
+            f"[{mean_auc:.3f} ± {std_auc:.3f}],",
+        ]
+    )
+
+    return f"""
+== Aggregate across folds
+
+Metrics below pool every prediction collected from all partitions to produce a single
+confusion matrix and ROC curve, highlighting the overall cross-validation performance.
+
+#table(
+  columns: 3,
+  [Metric], [Aggregate], [Mean ± SD across folds],
+  {rows}
+)
+
+#image("{base}/agg_cm.pdf")
+""".strip()
+
+
+def build_latex_cv_table(results: List[PartitionResult]) -> str:
+    if not results:
+        return ""
+
+    ordered = sorted(results, key=lambda r: r.spec.idx)
+    accs = [res.metrics["accuracy"] for res in ordered]
+    aucs = [res.metrics["roc_auc"] for res in ordered]
+    rows = []
+    for res in ordered:
+        acc = res.metrics["accuracy"]
+        auc = res.metrics["roc_auc"]
+        test_samples = len(res.y_true)
+        rows.append(
+            f"Fold {res.spec.idx} & {acc:.3f} & {auc:.3f} & {test_samples} \\\\"
+        )
+
+    def mean_std(values: List[float]) -> (float, float):
+        if not values:
+            return 0.0, 0.0
+        if len(values) == 1:
+            return float(values[0]), 0.0
+        return float(np.mean(values)), float(np.std(values, ddof=1))
+
+    mean_acc, std_acc = mean_std(accs)
+    mean_auc, std_auc = mean_std(aucs)
+
+    table_lines = [
+        r"\begin{table}[h]",
+        r"\centering",
+        r"\caption{Clip-level classification performance across 3-fold cross-validation.}",
+        r"\label{tab:cv_results}",
+        r"\begin{tabular}{lccc}",
+        r"\toprule",
+        r"\textbf{Fold} & \textbf{Accuracy} & \textbf{ROC-AUC} & \textbf{Test Samples} \\",
+        r"\midrule",
+        *rows,
+        r"\midrule",
+        f"Mean ± SD & {mean_acc:.3f} ± {std_acc:.3f} & {mean_auc:.3f} ± {std_auc:.3f} & -- \\\\",
+        r"\bottomrule",
+        r"\end{tabular}",
+        r"\end{table}",
+    ]
+    return "\n".join(table_lines)
+
+
+def plot_combined_figure(
+    results: List[PartitionResult],
+    loss_curves_by_idx: Dict[int, LossCurves],
+    output_path: Path,
+) -> None:
+    if not results:
+        return
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig, axes = plt.subplots(2, 3, figsize=(7, 5))
+
+    ordered = sorted(results, key=lambda r: r.spec.idx)
+    # Confusion matrices (top row) and loss curves (bottom row)
+    for col in range(3):
+        res = ordered[col] if col < len(ordered) else None
+
+        # Confusion matrix
+        ax_cm = axes[0, col]
+        if res:
+            cm = res.cm
+            acc = res.metrics["accuracy"]
+            auc = res.metrics["roc_auc"]
+            ax_cm.imshow(cm, cmap="Blues")
+            ax_cm.set_title(f"Fold {res.spec.idx} (Acc {acc:.3f}, AUC {auc:.3f})")
+            ax_cm.set_xticks([0, 1])
+            ax_cm.set_yticks([0, 1])
+            ax_cm.set_xticklabels(["stable (0)", "unstable (1)"])
+            ax_cm.set_yticklabels(["stable (0)", "unstable (1)"])
+            ax_cm.set_xlabel("Prediction")
+            ax_cm.set_ylabel("Ground Truth")
+            for i in range(2):
+                for j in range(2):
+                    ax_cm.text(j, i, cm[i, j], ha="center", va="center", color="black")
+        else:
+            ax_cm.axis("off")
+
+        # Loss curves
+        ax_loss = axes[1, col]
+        if res and res.spec.idx in loss_curves_by_idx:
+            curves = loss_curves_by_idx[res.spec.idx]
+            ax_loss.plot(curves.epochs, curves.train_loss, label="loss")
+            ax_loss.plot(curves.epochs, curves.val_loss, label="val_loss")
+            ax_loss.set_title(f"Loss curves — Fold {res.spec.idx}")
+            ax_loss.set_xlabel("Epoch")
+            ax_loss.set_ylabel("Loss")
+            ax_loss.legend()
+            ax_loss.grid(True, alpha=0.3)
+        else:
+            ax_loss.axis("off")
+
+    fig.tight_layout()
+    fig.savefig(output_path)
+    print(f"Saved combined figure to {output_path}")
+    plt.close(fig)
+
+
 def save_metrics_csv(results: List[PartitionResult], output_dir: Path):
     if not results:
         return
@@ -563,21 +898,14 @@ def build_typst_source(
     training_config: str,
     partition_sections: str,
     comparison_section: str,
+    aggregate_section: str,
 ) -> str:
     return f"""
-= Ablation study: different data-splitting strategies
+= Partitioning results
 
 *Using {dt}.*
 
-== Explanation of partitioning methods
-
-- *Random Split* – Subjects are shuffled and partitioned purely by count into train/val/test, so clip or label composition may differ across splits. Use as a baseline for comparison.
-- *Stratified by Group* – Sarcopenia and normal subjects are split independently with the same ratios, then recombined. This keeps each set’s sarcopenia/normal proportions aligned with the overall dataset.
-- *Balanced 1:1 Ratio* – First undersamples the larger subject group so sarcopenia and normal have equal counts, then applies the group-wise stratified split. Ensures balanced subject representation but sacrifices some data.
-- *Clip-Balanced* – Sorts subjects by clip count and greedily assigns each subject to the split with the largest clip deficit relative to the desired ratio. Aims to equalize total clips per split without per-group guarantees.
-- *Stratified by Stability* – Groups subjects by their stability profile (all stable, all unstable, mixed) and splits each category separately before recombining. Keeps these behavioral patterns evenly distributed.
-- *Double Stratified* – Adds another layer to the stability stratification by also separating sarcopenia vs. normal. Each group-pattern combination is split individually, yielding the most controlled, fine-grained balance across both clinical label and stability profile.
-
+The partitioning was done using the "Double-Stratified" strategy.
 
 == Training results
 
@@ -586,6 +914,8 @@ Accuracy, precision, recall and ROC-AUC (for unstable) are included in each ROC 
 {partition_sections}
 
 {comparison_section}
+
+{aggregate_section}
 
 == Training config
 
@@ -615,21 +945,27 @@ def main():
     partitions = build_partitions(dt)
     output_dir = REPORT_ROOT / dt
     output_dir.mkdir(parents=True, exist_ok=True)
+    loss_curves_by_idx: Dict[int, LossCurves] = {}
 
     results: List[PartitionResult] = []
     for partition in partitions:
         logdir = partition.train_dir / LOG_SUBDIR
         if logdir.exists():
-            fig = plot_loss(partition.idx, logdir, args.use_last)
-            if fig:
-                out_pdf = output_dir / f"run{partition.idx}_loss.pdf"
-                print(f"Saving to {out_pdf}")
-                fig.savefig(out_pdf)
+            curves = extract_loss_curves(
+                logdir, args.use_last, run_label=str(partition.idx)
+            )
+            if curves:
+                loss_curves_by_idx[partition.idx] = curves
+                fig = plot_loss(partition.idx, curves, args.use_last)
+                if fig:
+                    out_pdf = output_dir / f"run{partition.idx}_loss.pdf"
+                    print(f"Saving to {out_pdf}")
+                    fig.savefig(out_pdf)
 
-                out_jpg = output_dir / f"run{partition.idx}_loss.jpg"
-                print(f"Saving to {out_jpg}")
-                fig.savefig(out_jpg)
-                plt.close(fig)
+                    out_jpg = output_dir / f"run{partition.idx}_loss.jpg"
+                    print(f"Saving to {out_jpg}")
+                    fig.savefig(out_jpg)
+                    plt.close(fig)
             else:
                 print(f"Skipping loss plot for {partition.display_name}: no scalar data")
         else:
@@ -644,19 +980,31 @@ def main():
         return
 
     plot_average_results(results, output_dir)
+    aggregate_info = plot_aggregate_results(results, output_dir)
     save_metrics_csv(results, output_dir)
+
+    latex_table = build_latex_cv_table(results)
+    if latex_table:
+        print("\nLaTeX CV results table:\n")
+        print(latex_table)
+        print()
+
+    combined_fig_path = PLOTS_ROOT / "cv_combined.pdf"
+    plot_combined_figure(results, loss_curves_by_idx, combined_fig_path)
 
     evaluated_on = (
         "Evaluated on *last* epoch." if args.use_last else "Evaluated on *best* epoch."
     )
     partition_sections = build_partition_sections(results, evaluated_on, output_dir)
     comparison_section = build_partition_table(results)
+    aggregate_section = build_aggregate_section(aggregate_info, results, output_dir)
     training_config = load_training_config(WORK_DIR / dt / "base_config.yaml")
     typst_source = build_typst_source(
         dt,
         training_config,
         partition_sections,
         comparison_section,
+        aggregate_section,
     )
 
     compile_typst_report(typst_source, output_dir)

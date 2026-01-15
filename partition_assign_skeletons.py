@@ -1,4 +1,5 @@
 import argparse
+import pickle
 from pathlib import Path
 
 import numpy as np
@@ -8,11 +9,16 @@ from seq_transformation import seq_transformation
 
 SUBJECTS    = "csvs/subjects.csv"
 CLIPS       = "csvs/clips.csv"
-SKEL_ARRAYS = "output/skeletons/skels_all_124_nosub1_resized.npz"
+SKEL_ARRAYS = "output/skeletons/skels_all_124_nosub1_resized700x700_fixed_NTU.npz"
 
-skels = np.load(SKEL_ARRAYS)
+skels = dict(np.load(SKEL_ARRAYS))
 subjects = pd.read_csv(SUBJECTS, index_col=0)
 clips = pd.read_csv(CLIPS, index_col=0)
+
+# for key in skels:
+#     print(key)
+#     if "1_001_00.0to03.0" in key:
+#         print("YEAH")
 
 def partition_csv_to_skel_pkl(partition):
     train_X = []
@@ -29,8 +35,25 @@ def partition_csv_to_skel_pkl(partition):
         subj_id = subj["subject"]
         subj_clips = clips.loc[clips["subject"] == subj_id]
         subj_clip_paths = subj_clips["clip_path"]
-        subj_skels = [skels[name] for name in subj_clip_paths]
         subj_labels = [int(stable_unstable == "unstable") for stable_unstable in subj_clips["stable-unstable"]]
+
+        # Let's ignore the stable/unstable label for the skel loading
+        # (this is due to the relabelling. we're still using skels with the old labels)
+        subj_skels = []
+        for clip_path in subj_clip_paths:
+            clip_path: str
+            clip_stem = clip_path.rsplit('.mp4', 1)[0]
+            clip_stem_without_stable_label = clip_stem[:-2]
+            option1 = clip_stem_without_stable_label + "_0.mp4"
+            option2 = clip_stem_without_stable_label + "_1.mp4"
+
+            if option1 in skels:
+                subj_skels.append(skels[option1])
+            elif option2 in skels:
+                subj_skels.append(skels[option2])
+            else:
+                print("CLIP NOT FOUND!")
+                exit(1)
 
         if subj["split"] == "train":
             train_X.extend(subj_skels)
@@ -67,27 +90,23 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
-# INPUT_DIR  = Path("output/20251128_1753_partition")
 INPUT_DIR  = args.input_dir
-# OUTPUT_DIR = INPUT_DIR.parent / (INPUT_DIR.parts[-1] + "_skel")
 OUTPUT_DIR = INPUT_DIR
 inputs = [p for p in INPUT_DIR.iterdir() if p.suffix == ".csv"]
 inputs.sort()
 
-# print("Using:\n -", '\n - '.join(str(x) for x in inputs))
 print("Assigning skeletons + performing seq transformation")
 for input_path in inputs:
-
     partition  = pd.read_csv(input_path)
     pkl = partition_csv_to_skel_pkl(partition)
     seq_npz = seq_transformation(pkl)
 
     OUTPUT_DIR.mkdir(exist_ok=True)
 
-    # output_path_pkl = OUTPUT_DIR / (input_path.stem + ".pkl")
-    # print(f"{input_path} -> {output_path_pkl}")
-    # with open(output_path_pkl, 'wb') as f:
-    #     pickle.dump(pkl, f)
+    output_path_pkl = OUTPUT_DIR / (input_path.stem + ".pkl")
+    print(f"{input_path} -> {output_path_pkl}")
+    with open(output_path_pkl, "wb") as file:
+        pickle.dump(pkl, file)
 
     output_path_seq = OUTPUT_DIR / (input_path.stem + ".npz")
     print(f"{input_path} -> {output_path_seq}")

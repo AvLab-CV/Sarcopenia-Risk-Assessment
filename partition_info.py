@@ -94,7 +94,7 @@ if __name__ == "__main__":
     PARTITION_DIR = args.partition_dir
     print(f"Looking for {PARTITIONS_COUNT} partitions in `{PARTITION_DIR}`")
     partition_paths = [
-        PARTITION_DIR / f"partition{partition}.csv"
+        PARTITION_DIR / f"partition{partition+1}.csv"
         for partition in range(PARTITIONS_COUNT)
     ]
     check_overlaps(partition_paths)

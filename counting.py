@@ -6,7 +6,7 @@ CLS_UNSTABLE = 1
 CLS_SARCOPENIA = 1
 CLS_NORMAL = 2
 
-VIDEO_PATH = Path("/Users/aldo/Code/avlab/dataset/all_124_nosub1")
+VIDEO_PATH = Path("/Users/aldo/Code/avlab/dataset/all_124_nosub1_relabel")
 samples_paths = [path for path in VIDEO_PATH.iterdir() if path.suffix == ".mp4"]
 samples_paths.sort()
 
