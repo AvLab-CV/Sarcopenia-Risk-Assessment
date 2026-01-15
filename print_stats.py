@@ -7,7 +7,7 @@ from pathlib import Path
 
 CLASS_LABELS = ["stable", "unstable"]
 CLASSES = 2
-RESULTS_DIR = Path("results")
+RESULTS_DIR = Path("output/old/results")
 FOLDS = 4
 
 # load confusion matrices

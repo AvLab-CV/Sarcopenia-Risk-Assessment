@@ -69,11 +69,10 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("dt", type=str)
     parser.add_argument(
-        "--uselast",
-        "--use-last",
+        "--use-best",
         action="store_true",
-        dest="use_last",
-        help="Evaluate using the final checkpoint instead of the best one.",
+        dest="use_best",
+        help="Evaluate using the best checkpoint instead of the last one.",
     )
     return parser.parse_args()
 
@@ -946,17 +945,18 @@ def main():
     output_dir = REPORT_ROOT / dt
     output_dir.mkdir(parents=True, exist_ok=True)
     loss_curves_by_idx: Dict[int, LossCurves] = {}
+    use_last = not args.use_best
 
     results: List[PartitionResult] = []
     for partition in partitions:
         logdir = partition.train_dir / LOG_SUBDIR
         if logdir.exists():
             curves = extract_loss_curves(
-                logdir, args.use_last, run_label=str(partition.idx)
+                logdir, use_last, run_label=str(partition.idx)
             )
             if curves:
                 loss_curves_by_idx[partition.idx] = curves
-                fig = plot_loss(partition.idx, curves, args.use_last)
+                fig = plot_loss(partition.idx, curves, use_last)
                 if fig:
                     out_pdf = output_dir / f"run{partition.idx}_loss.pdf"
                     print(f"Saving to {out_pdf}")
@@ -971,7 +971,7 @@ def main():
         else:
             print(f"Skipping loss plot for {partition.display_name}: missing {logdir}")
 
-        result = evaluate_partition(partition, args.use_last, output_dir)
+        result = evaluate_partition(partition, use_last, output_dir)
         if result:
             results.append(result)
 
@@ -993,7 +993,7 @@ def main():
     plot_combined_figure(results, loss_curves_by_idx, combined_fig_path)
 
     evaluated_on = (
-        "Evaluated on *last* epoch." if args.use_last else "Evaluated on *best* epoch."
+        "Evaluated on *last* epoch." if use_last else "Evaluated on *best* epoch."
     )
     partition_sections = build_partition_sections(results, evaluated_on, output_dir)
     comparison_section = build_partition_table(results)
