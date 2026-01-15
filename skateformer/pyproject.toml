@@ -1,0 +1,22 @@
+[project]
+name = "skateformer"
+version = "0.1.0"
+requires-python = "==3.9.*"
+dependencies = [
+  "h5py>=3.14.0",
+  "matplotlib>=3.6.3",
+  "numpy>=2",
+  "pandas>=2.3.3",
+  "pyyaml==5.4.*",
+  "scikit-learn>=1.0.0",
+  "tensorboardx>=2.6.4",
+  "timm>=1.0.19",
+  "torch",
+  "torchlight",
+  "torchpack==0.2.2",
+  "torchvision==0.13.*",
+  "tqdm>=4.67.1",
+]
+
+[tool.uv.sources]
+torchlight = { path = "torchlight" }

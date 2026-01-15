@@ -1,0 +1,8 @@
+__pycache__
+*.egg-info
+.DS_Store
+*.log
+
+/work_dir
+/pretrained
+/data
