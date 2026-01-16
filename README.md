@@ -1,4 +1,4 @@
-## Skeleton-Based Motion Pattern Recognition for Sarcopenia Risk Assessment
+# Skeleton-Based Motion Pattern Recognition for Sarcopenia Risk Assessment
 
 Yu-Hsuan Chiu, Aldo Acevedo Onieva, Gee-Sern Hsu, Jiunn-Horng Kang
 
