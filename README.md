@@ -2,9 +2,19 @@
 
 Yu-Hsuan Chiu, Aldo Acevedo Onieva, Gee-Sern Hsu, Jiunn-Horng Kang
 
-## Setup
+## Installation
 
-.
+Requirements:
+
+- Python >= 3.9
+- CUDA >= 11.3
+
+```sh
+git clone https://github.com/Sinono3/sarcopenia
+cd sarcopenia
+uv sync
+source .venv/bin/activate
+```
 
 ## Usage
 
