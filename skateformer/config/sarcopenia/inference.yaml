@@ -1,24 +1,14 @@
 seed: 1
 num_worker: 4
-# work_dir: ./work_dir/20251210_0105/partition1/sliding_window
-# work_dir: ./work_dir/20251210_0105/partition2/sliding_window
-work_dir: ./work_dir/20251210_0105/partition3/sliding_window
-
 phase: test
-# Last:
-# weights: ./work_dir/20251210_0105/partition1/runs-55-275.pt
-# weights: ./work_dir/20251210_0105/partition2/runs-55-220.pt
-weights: ./work_dir/20251210_0105/partition3/runs-55-275.pt
 
-# Best:
-# weights: ./work_dir/20251210_0105/partition1/runs-7-??
-# weights: ./work_dir/20251210_0105/partition2/runs-7-28.pt
-# weights: ./work_dir/20251210_0105/partition3/runs-7-35.pt
+work_dir: ./work_dir/20251210_0105/partition3/sliding_window
+weights: ./work_dir/20251210_0105/partition3/runs-55-275.pt
 
 # feeder
 feeder: feeders.feeder_ntu2.Feeder
 test_feeder_args:
-  data_path: /media/Eason/Aldo/sarcopenia/merged.npz
+  data_path: /media/avlab/2tb/Aldo/sarcopenia/skeletons/testvids_ntu.npz
   split: test
   window_size: 5000
   p_interval: [0.95]

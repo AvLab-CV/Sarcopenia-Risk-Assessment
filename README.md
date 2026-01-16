@@ -20,7 +20,7 @@ source .venv/bin/activate
 
 ### Inference
 
-You need to record videos of the subjects performing tandem gait, and save them into a directory. For example, let's say you have all videos on a directory `/home/user/inferencevideos`. The name of the
+You need to record videos of the subjects performing tandem gait, and save them into a directory. For example, let's say you have all videos on a directory `/home/user/sarcopenia/testvids`.
 
 If the video is not square, you need to resize it to a square aspect-ratio to make it compatible with the pose estimation model. To facilitate this, we have provided the script **`video_resize.py`**. This script takes all videos from one directory, resizes them to 700x700 (you can adjust this), and saves them to another directory. The method for resizing adds black bars, i.e. it makes the picture fit to the resolution, _not_ fill. This is important, because we don't want to cut-off the subject. Example:
 
@@ -44,7 +44,11 @@ python ./skeleton_to_ntu_format.py --input-format h36m17 skeletons/testvids.npz 
 ```
 
 Now, with the stability classifier trained, we can do the actual testing of the full pipeline, and stratify the subjects
-into risk groups depending on their instability rate. The script `inference.py` does this. But you first must modify the configuration file `config/sarcopenia/inference.yaml`, specifically the lines.
+into risk groups depending on their instability rate. The script `inference.py` does this. But you first must modify the configuration file `config/sarcopenia/inference.yaml`, specifically the lines 5, 6 and 11:
+
+- `work_dir`: output directory of the inference.
+- `weights`: weights
+- `data_path`: the input .npz file for inference, (in our example `skeletons/testvids_ntu.npz`)
 
 
 ### Training

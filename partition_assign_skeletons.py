@@ -15,11 +15,6 @@ skels = dict(np.load(SKEL_ARRAYS))
 subjects = pd.read_csv(SUBJECTS, index_col=0)
 clips = pd.read_csv(CLIPS, index_col=0)
 
-# for key in skels:
-#     print(key)
-#     if "1_001_00.0to03.0" in key:
-#         print("YEAH")
-
 def partition_csv_to_skel_pkl(partition):
     train_X = []
     train_Y = []
