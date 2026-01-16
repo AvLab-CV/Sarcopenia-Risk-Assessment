@@ -12,7 +12,7 @@ args = parser.parse_args()
 # dt      = "20251128_1911"
 data_dt = args.data_dt
 dt = args.dt
-datapath = Path(f"/media/Eason/Aldo/SkateFormer/data/sarcopenia/{data_dt}")
+datapath = Path(f"./data/sarcopenia/{data_dt}")
 config = "./config/sarcopenia/train_base.yaml"
 base_work = Path(f"./work_dir/{dt}")
 base_work.mkdir()

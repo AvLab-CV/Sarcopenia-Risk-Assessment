@@ -104,7 +104,7 @@ To train the models, run:
 ```sh
 # within the project directory
 cd skateformer
-python train.py --data_dt data/20251209_1738 --dt train
+python train.py --data_dt 20251209_1738 --dt train
 cd ..
 ```
 
