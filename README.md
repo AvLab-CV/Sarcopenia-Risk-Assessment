@@ -1,5 +1,9 @@
 # Skeleton-Based Motion Pattern Recognition for Sarcopenia Risk Assessment
 
+<img width="500" alt="image" src="https://github.com/user-attachments/assets/3bb581c2-d8bc-46dd-b14f-1e36ccf1f9b2" />
+</br>
+<img width="500" alt="image" src="https://github.com/user-attachments/assets/8d052410-e9b1-4c6b-96f1-58913a17c7b3" />
+
 Yu-Hsuan Chiu, Aldo Acevedo Onieva, Gee-Sern Hsu, Jiunn-Horng Kang
 
 ## Abstract
