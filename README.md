@@ -43,12 +43,19 @@ we provide a script for this purpose:
 python ./skeleton_to_ntu_format.py --input-format h36m17 skeletons/testvids.npz skeletons/testvids_ntu.npz
 ```
 
-Now, with the stability classifier trained, we can do the actual testing of the full pipeline, and stratify the subjects
-into risk groups depending on their instability rate. The script `inference.py` does this. But you first must modify the configuration file `config/sarcopenia/inference.yaml`, specifically the lines 5, 6 and 11:
+We also need to convert to the format SkateFormer accepts for inference:
+
+```sh
+python partition_inference.py skeletons/testvids_ntu.npz  skeletons/testvids_inference.npz
+```
+
+Now we can stratify the subjects into risk groups depending on their instability rate.
+The script `inference.py` does this.
+You first must modify the configuration file `config/sarcopenia/inference.yaml`, specifically the lines 5, 6 and 11:
 
 - `work_dir`: output directory of the inference. There will be a CSV containing the sliding window instability rates.
 - `weights`: weights to the pretrained stability classifier `.pt` file. You can download this [here](https://drive.google.com/file/d/1NC7QHky9NFlRWW-_D43TGxix1vwbfLwK/view?usp=sharing).
-- `data_path`: the input .npz file for inference, (in our example `skeletons/testvids_ntu.npz`)
+- `data_path`: the input .npz file for inference, (in our example `skeletons/testvids_inference.npz`)
 
 ```sh
 cd skateformer
