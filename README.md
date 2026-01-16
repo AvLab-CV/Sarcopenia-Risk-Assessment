@@ -2,6 +2,10 @@
 
 Yu-Hsuan Chiu, Aldo Acevedo Onieva, Gee-Sern Hsu, Jiunn-Horng Kang
 
+## Abstract
+
+Sarcopenia, characterized by progressive loss of muscle mass and function, significantly increases fall risk and mobility decline in older adults. Conventional diagnostics require specialized instrumentation and trained personnel, limiting their feasibility for large-scale community screening. We propose a vision-based framework for sarcopenia risk stratification using tandem gait videos captured with a single RGB camera. Tandem gait amplifies balance deficits associated with sarcopenia, making them detectable by vision-based systems. We utilized 124 subjects (93 normal controls, 31 sarcopenia), with tandem gait sequences segmented into skeleton-based clips annotated as stable or unstable. A pretrained spatiotemporal skeleton transformer, SkateFormer, was fine-tuned for stability classification. A sliding-window aggregation approach computed instability rate as a quantitative biomarker for subject-level risk assessment. Risk stratification demonstrated statistically significant separation into mostly stable (14.3\% sarcopenia prevalence) and mostly unstable (46.2\% prevalence) groups. These results validate the feasibility and practical contribution of the proposed method for contact-free, user-friendly, and scalable prescreening of sarcopenia risk.
+
 ## Installation
 
 Requirements:
@@ -16,9 +20,19 @@ uv sync
 source .venv/bin/activate
 ```
 
-## Usage
+## Dataset
 
-### Inference
+We release the skeleton data in multiple modalities:
+
+- A. 3-second skeleton clips of 124 subjects performing tandem gait labelled stable/unstable and sarcopenia/normal, with subject and time annotations
+  - [H36M 17-joint format](https://drive.google.com/file/d/1u-s3XaeU5hLAbFOijnbEbNEiagwPfQua/view?usp=sharing)
+  - [H36M 17-joint -> Kinect V2 NTU format](https://drive.google.com/file/d/1cIcbwhk7UwRCYOsq4FJDIRBG6WqsZZUI/view?usp=sharing)
+- B. Full-length skeleton clips of 124 subjects performing tandem gait
+  - [H36M 17-joint format](https://drive.google.com/file/d/1Gp2eKt1fCNVYBbLejhn9-ZV3k_Y7iIbW/view?usp=sharing)
+- C. 3-fold cross-validation ready skeleton clips of 124 subjects performing tandem gait
+  - [Kinect V2 NTU format](https://drive.google.com/file/d/1DWhOhUkGeHy8sgf82aMkyJxKeA5oq6us/view?usp=sharing)
+
+## Inference
 
 You need to record videos of the subjects performing tandem gait, and save them into a directory. For example, let's say you have all videos on a directory `/home/user/sarcopenia/testvids`.
 
@@ -53,7 +67,7 @@ Now we can stratify the subjects into risk groups depending on their instability
 The script `inference.py` does this.
 You first must modify the configuration file `config/sarcopenia/inference.yaml`, specifically the lines 5, 6 and 11:
 
-- `work_dir`: output directory of the inference. There will be a CSV containing the sliding window instability rates.
+- `work_dir`: output directory of the inference. There will be a CSV containing the sliding window instability rates, e.g. `work_dir/testvids_inference/`
 - `weights`: weights to the pretrained stability classifier `.pt` file. You can download this [here](https://drive.google.com/file/d/1NC7QHky9NFlRWW-_D43TGxix1vwbfLwK/view?usp=sharing).
 - `data_path`: the input .npz file for inference, (in our example `skeletons/testvids_inference.npz`)
 
@@ -63,19 +77,25 @@ python inference.py --config config/sarcopenia/inference.yaml
 cd ..
 ```
 
-After running the inference, you can see the results with the **`inference_analysis.py`** script:
+After running the inference, you can see the results with the **`inference_analysis.py`** script, by setting the 
 
 ```sh
-python inference_analysis.py <work_dir>
+python inference_analysis.py work_dir/testvids_inference
 ```
 
-### Training
+## Training
 
-You first need to download [the skeleton dataset ZIP file.](https://drive.google.com/file/d/1DWhOhUkGeHy8sgf82aMkyJxKeA5oq6us/view?usp=sharing).
-Extract this into the directory `skateformer/data/`
-The zip contains The skeleton data of the subjects in a pre-split 3-fold data (train/val/test split).
+You need to download the [3-fold cross-validation ready version of the skeleton dataset.](#dataset)
+Extract the zip into the directory `skateformer/data/`.
+The zip contains the skeleton data of the subjects in a pre-configured 3-fold cross-validation format (train/val/test split).
 This is for training, validation and testing of the stability classifier on the *stability classification* task.
 The ground truth predictions labels are stable/unstable.
+
+You also need the pretrained SkateFormer model, which we will finetune.
+It must be located at `./pretrained/ntu120_CSub/SkateFormer_j.pt`.
+You can download from the [SkateFormer repository.](https://github.com/KAIST-VICLab/SkateFormer?tab=readme-ov-file#pretrained-model)
+
+To train the models, run:
 
 ```sh
 # within the project directory
@@ -92,3 +112,4 @@ You can then analyze the training runs by:
 # within the project directory
 python training_metrics.py skateformer/work_dir/train/
 ```
+
