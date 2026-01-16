@@ -42,7 +42,7 @@ If the video is not square, you need to resize it to a square aspect-ratio to ma
 python video_resize.py /home/user/sarcopenia/testvids /home/user/sarcopenia/testvids_700x700
 ```
 
-Once you have the resized videos, you need to estimate the poses of the subjects in the videos. For this, we have provided the script **`mp4_to_skeleton.py`**. This script reads video files from a directory and outputs a single `.npz` file containing all the skeletons.
+Once you have the resized videos, you need to estimate the poses of the subjects in the videos. For this, we have provided the script **`mp4_to_skeleton.py`**. This script reads video files from a directory and outputs a single `.npz` file containing all the skeletons. You need to place the `models` directory containing the PoseFormerV2, HRNet, YOLO weights required for pose estimation. This is found in [models.zip](https://drive.google.com/file/d/1-HSAujzzb0Xktoty5GPekgyndigxPC-f/view?usp=sharing).
 
 ```sh
 python mp4_to_skeleton.py /home/user/sarcopenia/testvids_700x700 skeletons/testvids.npz
@@ -67,9 +67,9 @@ Now we can stratify the subjects into risk groups depending on their instability
 The script `inference.py` does this.
 You first must modify the configuration file `config/sarcopenia/inference.yaml`, specifically the lines 5, 6 and 11:
 
-- `work_dir`: output directory of the inference. There will be a CSV containing the sliding window instability rates, e.g. `work_dir/testvids_inference/`
-- `weights`: weights to the pretrained stability classifier `.pt` file. You can download this [here](https://drive.google.com/file/d/1NC7QHky9NFlRWW-_D43TGxix1vwbfLwK/view?usp=sharing).
-- `data_path`: the input .npz file for inference, (in our example `skeletons/testvids_inference.npz`)
+- `work_dir`: output directory of the inference e.g. `work_dir/testvids_inference/`. There will be a CSV containing the sliding window instability rates.
+- `weights`: path to the pretrained stability classifier `.pt` file. You can download this [here](https://drive.google.com/file/d/1NC7QHky9NFlRWW-_D43TGxix1vwbfLwK/view?usp=sharing).
+- `data_path`: the input .npz file for inference, (e.g. `../skeletons/testvids_inference.npz`)
 
 ```sh
 cd skateformer
@@ -77,10 +77,10 @@ python inference.py --config config/sarcopenia/inference.yaml
 cd ..
 ```
 
-After running the inference, you can see the results with the **`inference_analysis.py`** script, by setting the 
+After running the inference, you can see the results with the **`inference_analysis.py`** script:
 
 ```sh
-python inference_analysis.py work_dir/testvids_inference
+python inference_analysis.py skateformer/work_dir/testvids_inference
 ```
 
 ## Training

@@ -36,22 +36,32 @@ class Feeder(Dataset):
 
     def load_data(self):
         # data: N C V T M
-        npz_data = np.load(self.data_path)
+        # allow_pickle=True to support older inference NPZs that stored clip arrays as dtype=object
+        npz_data = np.load(self.data_path, allow_pickle=True)
         if self.split == 'train':
             self.data = npz_data['x_train']
             self.label = np.where(npz_data['y_train'] > 0)[1]
             self.data_len = npz_data['len_train']
-            self.sample_name = ['train_' + str(i) for i in range(len(self.data))]
+            if 'clips_train' in npz_data.files:
+                self.sample_name = [str(x) for x in npz_data['clips_train'].tolist()]
+            else:
+                self.sample_name = ['train_' + str(i) for i in range(len(self.data))]
         elif self.split == 'test':
             self.data = npz_data['x_test']
             self.label = np.where(npz_data['y_test'] > 0)[1]
             self.data_len = npz_data['len_test']
-            self.sample_name = ['test_' + str(i) for i in range(len(self.data))]
+            if 'clips_test' in npz_data.files:
+                self.sample_name = [str(x) for x in npz_data['clips_test'].tolist()]
+            else:
+                self.sample_name = ['test_' + str(i) for i in range(len(self.data))]
         elif self.split == 'val':
             self.data = npz_data['x_val']
             self.label = np.where(npz_data['y_val'] > 0)[1]
             self.data_len = npz_data['len_val']
-            self.sample_name = ['val_' + str(i) for i in range(len(self.data))]
+            if 'clips_val' in npz_data.files:
+                self.sample_name = [str(x) for x in npz_data['clips_val'].tolist()]
+            else:
+                self.sample_name = ['val_' + str(i) for i in range(len(self.data))]
         else:
             raise NotImplementedError('data split only supports train/test')
         N, T, _ = self.data.shape
@@ -85,7 +95,8 @@ class Feeder(Dataset):
         if self.partition:
             data_numpy = data_numpy[:, :, self.new_idx]
 
-        return data_numpy, data_len, label, index
+        clip_name = self.sample_name[index]
+        return data_numpy, data_len, label, index, clip_name
 
     def top_k(self, score, top_k):
         rank = score.argsort()

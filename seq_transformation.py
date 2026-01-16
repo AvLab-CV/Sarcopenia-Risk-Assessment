@@ -59,7 +59,7 @@ def align_frames(skes_joints):
 
     """
     num_skes = len(skes_joints)
-    max_num_frames = 1000
+    max_num_frames = 1700
     aligned_skes_joints = np.zeros((num_skes, max_num_frames, 150), dtype=np.float32)
 
     for idx, ske_joints in enumerate(skes_joints):
@@ -101,11 +101,20 @@ def seq_transformation(partition):
         data["x_" + set_name] = skes_joints
         data["len_" + set_name] = skes_len
         data["y_" + set_name] = one_hot_vector(labels)
+        # Optional: preserve clip names (e.g. produced by `partition_inference.py`)
+        # Store as a plain string array (not dtype=object) so it loads without allow_pickle.
+        if (set_name + "_clips") in partition:
+            clips = list(partition[set_name + "_clips"])
+            if len(clips) != len(skes_joints):
+                raise ValueError(
+                    f"{set_name}_clips length ({len(clips)}) does not match {set_name}_X length ({len(skes_joints)})."
+                )
+            data["clips_" + set_name] = np.asarray(clips, dtype=str)
 
         print("x shape", data["x_" + set_name].shape)
         print("y shape", data["y_" + set_name].shape)
-        print("normal     count=", data["y_" + set_name][:, 0].sum().item())
-        print("sarcopenia count=", data["y_" + set_name][:, 1].sum().item())
+        # print("normal     count=", data["y_" + set_name][:, 0].sum().item())
+        # print("sarcopenia count=", data["y_" + set_name][:, 1].sum().item())
         print()
 
     return data

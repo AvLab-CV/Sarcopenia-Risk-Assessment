@@ -254,10 +254,22 @@ class Processor():
             process = tqdm(self.data_loader[ln])
             ds = []
 
-            for batch_idx, (data, data_len, label, index) in enumerate(process):
+            for batch_idx, batch in enumerate(process):
+                if len(batch) == 4:
+                    data, data_len, label, index = batch
+                    clip_name = None
+                elif len(batch) == 5:
+                    data, data_len, label, index, clip_name = batch
+                else:
+                    raise ValueError(f"Unexpected batch format (len={len(batch)}). Expected 4 or 5 items.")
                 with torch.no_grad():
                     data = data.float().cuda(self.output_device)
                     label = label.long().cuda(self.output_device)
+
+                    if data.shape[0] != 1:
+                        raise ValueError(
+                            f"Sliding-window inference currently expects batch_size=1, got batch_size={data.shape[0]}"
+                        )
 
                     Y = []
 
@@ -274,7 +286,16 @@ class Processor():
                     
                         
                     Y = np.array(Y)
+                    if clip_name is None:
+                        clip_value = None
+                    else:
+                        # DataLoader collates strings into a list for batch_size=1
+                        if isinstance(clip_name, (list, tuple)):
+                            clip_value = clip_name[0]
+                        else:
+                            clip_value = clip_name
                     ds.append({
+                                     "clip": clip_value,
                                      "index": index.item(),
                                      "seq_len": data_len.item(),
                                      "subject_has_sarcopenia": label.item(),

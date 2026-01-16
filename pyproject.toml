@@ -26,7 +26,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-torchlight = { path = "skateformer/torchlight", editable = true }
+torchlight = { path = "skateformer/torchlight" }
 torch = [
   { index = "pytorch-cu113", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
 ]
