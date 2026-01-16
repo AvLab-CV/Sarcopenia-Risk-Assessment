@@ -52,14 +52,14 @@ into risk groups depending on their instability rate. The script `inference.py` 
 
 ```sh
 cd skateformer
-python inference.py --config config/sarcopenia/inference
+python inference.py --config config/sarcopenia/inference.yaml
 cd ..
 ```
 
 After running the inference, you can see the results with the **`inference_analysis.py`** script:
 
 ```sh
-python inference_analysis.py
+python inference_analysis.py <work_dir>
 ```
 
 ### Training
