@@ -15,12 +15,6 @@ from poseformerv2.model_poseformer import PoseTransformerV2 as Model
 from poseformerv2.camera import normalize_screen_coordinates, camera_to_world
 from lib.hrnet.gen_kpts import gen_video_kpts as hrnet_pose
 
-# Prevent downstream argparse users (e.g., HRNet) from seeing PoseFormer CLI args.
-# TODO: ????
-# ERROR: ???????
-# sys.argv = sys.argv[:1]
-
-
 # ---- Shared geometry helpers (2D COCO -> H36M for PoseFormer) -----------------
 h36m_coco_order = [9, 11, 14, 12, 15, 13, 16, 4, 1, 5, 2, 6, 3]
 coco_order = [0, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
@@ -324,6 +318,10 @@ def build_extractor(args) -> Tuple[object, int]:
 
 def main():
     args = parse_args()
+    # Prevent downstream argparse users (e.g., HRNet) from seeing PoseFormer CLI args.
+    # TODO: ????
+    # ERROR: ???????
+    sys.argv = sys.argv[:1]
 
     video_path: Path = args.video_dir_path
     output_path: Path = args.output_path
@@ -340,12 +338,16 @@ def main():
     skel_by_video: Dict[str, np.ndarray] = {}
 
     for i, video in enumerate(tqdm(videos, desc="Videos")):
-        try:
-            frames = extractor(video)  # (frame, joints, 3)
-            frames = frames.reshape(frames.shape[0], joint_count * 3)
-            skel_by_video[video.name] = frames
-        except Exception as e:
-            print(f"Skipping video idx={i}, {video.name}, caught exception: {e}")
+        frames = extractor(video)  # (frame, joints, 3)
+        frames = frames.reshape(frames.shape[0], joint_count * 3)
+        skel_by_video[video.name] = frames
+
+        # try:
+        #     frames = extractor(video)  # (frame, joints, 3)
+        #     frames = frames.reshape(frames.shape[0], joint_count * 3)
+        #     skel_by_video[video.name] = frames
+        # except Exception as e:
+        #     print(f"Skipping video idx={i}, {video.name}, caught exception: {e}")
 
     print(f"Saving skeleton data to {output_path}")
     np.savez(output_path, **skel_by_video)

@@ -1,56 +1,64 @@
-### downloads 
+## Skeleton-Based Motion Pattern Recognition for Sarcopenia Risk Assessment
 
-- `git clone https://github.com/Sinono3/sarco`
-- `cd sarco`
-- Download [models.zip](https://drive.google.com/file/d/1YvS50TVNRfQ9q5b7hs75Nl05SsF6H5cN/view?usp=sharing) and extract to a folder `models`.
-  - directory structure should be like
-    - sarco
-      - models
-        - hrnet
-        - mediapipe
-        - poseformer
-        - yolov3
-      - ...
+Yu-Hsuan Chiu, Aldo Acevedo Onieva, Gee-Sern Hsu, Jiunn-Horng Kang
 
-### pose estimation
+## Setup
 
-- You will first need to install dependencies.. Just test the scripts until they run. you will have to
-  figure out on your own... sorry. Shouldn't be too difficult though.
-- Edit initial constants of `mp4_to_skeleton.py` to reflthe ect current environment.
-  - Modify `VIDEO_PATH` to point to dataset folder.
-    - This folder on this path should contain two sub-folders: `stable` and `unstable`.
-    - `stable` and `unstable`
-    - The naming should be consistent with e.g. `1_137tg_2_33.0_to_36.0.mp4`
-  - Executing this script will produce four outputs:
-    - `SKELETON_OUTPUT_PATH`: the actual skeleton data, a pickle file of a list of each clip as a skeleton sequence stored as a `np.array` of shape (90, 25, 4).
-    - `UNSTABLE_LABELS_OUTPUT_PATH`: a .txt file where the ith line has a 0/1 for stable/unstable for the ith skeleton in the Pickle file
-    - `SARCOPENIA_LABELS_OUTPUT_PATH`: a .txt file where the ith line has a 0/1 for sarcopenia/healthy for the ith skeleton in the Pickle file
-    - `PATHS_OUTPUT_PATH`: a .txt file where the ith line has the video path from which the ith skeleton in the Pickle file was estimated
-  - We convert the mediapipe's 17-joint format to 25 to reflect NTU RGB+D's format (which SkateFormer is trained on.)
-- Run `python mp4_to_skeleton.py`
-- Make sure the paths in `seq_transformation.py` are okay.
-- Run `python seq_transformation.py`
-  - This script saves the final NPZ file that SkateFormer is trained on.
-  - This script creates a 70/30 train/test split. (in this case, the test is more like validation)
+.
 
-### visualization
+## Usage
 
-- Edit `visualize_skeleton.py` and make sure `PICKLE_PATH`, `PATHS_PATH` and `VIDEO_PATH` are okay.
-- Run `python visualize_skeleton.py`
+### Inference
 
-### skateformer
+You need to record videos of the subjects performing tandem gait, and save them into a directory. For example, let's say you have all videos on a directory `/home/user/inferencevideos`. The name of the
 
-- `git clone https://github.com/Sinono3/skateformer`
-- `cd skateformer`
-- `uv venv`
-- `source .venv/bin/activate`
-- Install dependencies (this may fail on your machine, you will have to figure out on your own... sorry.). You can look at the skateformer `requirements.yaml` for reference.
-  - `pip install "cython<3.0.0" setuptools wheel`
-  - `pip install "pyyaml==5.4.1" --no-build-isolation`
-  - `uv sync`
-- Download SkateFormer pretrained models as instructed in SkateFormer's README.
-- Then, edit `newconfig/stableunstable_train.yaml`.
-  - Modify line 14 (`train_feeder_args.data_path`) to reflect `SAVE_PATH` (from `seq_transformation.py`).
-  - Modify line 27 (`test_feeder_args.data_path`) to reflect `SAVE_PATH` (from `seq_transformation.py`).
-- Then, to finetune (and get the validation accuracy after each epoch), run:
-  - `python main.py --config newconfig/stableunstable_train.yaml`
+If the video is not square, you need to resize it to a square aspect-ratio to make it compatible with the pose estimation model. To facilitate this, we have provided the script **`video_resize.py`**. This script takes all videos from one directory, resizes them to 700x700 (you can adjust this), and saves them to another directory. The method for resizing adds black bars, i.e. it makes the picture fit to the resolution, _not_ fill. This is important, because we don't want to cut-off the subject. Example:
+
+```sh
+python video_resize.py /home/user/sarcopenia/testvids /home/user/sarcopenia/testvids_700x700
+```
+
+Once you have the resized videos, you need to estimate the poses of the subjects in the videos. For this, we have provided the script **`mp4_to_skeleton.py`**. This script reads video files from a directory and outputs a single `.npz` file containing all the skeletons.
+
+```sh
+python mp4_to_skeleton.py /home/user/sarcopenia/testvids_700x700 skeletons/testvids.npz
+```
+
+The stability classifier (SkateFormer model) expects the skeleton data in Kinect V2 format,
+comprised by 25 joints. Our pose estimation method outputs in the 17-joint H36M format.
+Because of this discrepancy, we must augment our 17-joint skeleton to 25 joints,
+we provide a script for this purpose:
+
+```sh
+python ./skeleton_to_ntu_format.py --input-format h36m17 skeletons/testvids.npz skeletons/testvids_ntu.npz
+```
+
+Now, with the stability classifier trained, we can do the actual testing of the full pipeline, and stratify the subjects
+into risk groups depending on their instability rate. The script `inference.py` does this. But you first must modify the configuration file `config/sarcopenia/inference.yaml`, specifically the lines.
+
+
+### Training
+
+You first need to download the skeleton dataset.
+The zip contains:
+
+1. The skeleton data of the subjects in a pre-split 3-fold data (train/val/test split).
+  - This is for training, validation and testing of the stability classifier on the *stability classification* task.
+    The ground truth predictions labels are stable/unstable.
+2. The skeleton data with the merged clips.
+
+```sh
+# within the project directory
+cd skateformer
+python train.py --data_dt 20251209_1738 --dt train
+cd ..
+```
+
+This will run the training and testing of the stability classifier on all the partitions,
+outputting the training analytics and models (per epoch) to a subdirectory `skateformer/work_dir/train`.
+You can then analyze the training runs by:
+
+```sh
+# within the project directory
+python training_metrics.py skateformer/work_dir/train/
+```

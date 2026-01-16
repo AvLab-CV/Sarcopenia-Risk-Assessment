@@ -3,20 +3,40 @@ name = "sarcopenia"
 version = "0.1.0"
 requires-python = "==3.9.*"
 dependencies = [
+  "einops>=0.8.1",
+  "filterpy>=1.4.5",
   "h5py>=3.14.0",
   "matplotlib>=3.6.3",
-  "numpy>=2",
+  "numba>=0.60.0",
+  "numpy<2",
+  "opencv-python-headless>=4",
   "pandas>=2.3.3",
+  "pyqt5<=5.10",
   "pyyaml==5.4.*",
+  "scikit-image>=0.24.0",
   "scikit-learn>=1.0.0",
   "tensorboardx>=2.6.4",
   "timm>=1.0.19",
   "torch",
+  "torch-dct>=0.1.6",
   "torchlight",
   "torchpack==0.2.2",
   "torchvision==0.13.*",
   "tqdm>=4.67.1",
+  "yacs>=0.1.8",
 ]
 
 [tool.uv.sources]
-torchlight = { path = "torchlight" }
+torchlight = { path = "skateformer/torchlight", editable = true }
+torch = [
+  { index = "pytorch-cu113", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+]
+torchvision = [
+  { index = "pytorch-cu113", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu113"
+url = "https://download.pytorch.org/whl/cu113"
+explicit = true
+
