@@ -46,25 +46,34 @@ python ./skeleton_to_ntu_format.py --input-format h36m17 skeletons/testvids.npz 
 Now, with the stability classifier trained, we can do the actual testing of the full pipeline, and stratify the subjects
 into risk groups depending on their instability rate. The script `inference.py` does this. But you first must modify the configuration file `config/sarcopenia/inference.yaml`, specifically the lines 5, 6 and 11:
 
-- `work_dir`: output directory of the inference.
-- `weights`: weights
+- `work_dir`: output directory of the inference. There will be a CSV containing the sliding window instability rates.
+- `weights`: weights to the pretrained stability classifier `.pt` file. You can download this [here](https://drive.google.com/file/d/1NC7QHky9NFlRWW-_D43TGxix1vwbfLwK/view?usp=sharing).
 - `data_path`: the input .npz file for inference, (in our example `skeletons/testvids_ntu.npz`)
 
+```sh
+cd skateformer
+python inference.py --config config/sarcopenia/inference
+cd ..
+```
+
+After running the inference, you can see the results with the **`inference_analysis.py`** script:
+
+```sh
+python inference_analysis.py
+```
 
 ### Training
 
-You first need to download the skeleton dataset.
-The zip contains:
-
-1. The skeleton data of the subjects in a pre-split 3-fold data (train/val/test split).
-  - This is for training, validation and testing of the stability classifier on the *stability classification* task.
-    The ground truth predictions labels are stable/unstable.
-2. The skeleton data with the merged clips.
+You first need to download [the skeleton dataset ZIP file.](https://drive.google.com/file/d/1DWhOhUkGeHy8sgf82aMkyJxKeA5oq6us/view?usp=sharing).
+Extract this into the directory `skateformer/data/`
+The zip contains The skeleton data of the subjects in a pre-split 3-fold data (train/val/test split).
+This is for training, validation and testing of the stability classifier on the *stability classification* task.
+The ground truth predictions labels are stable/unstable.
 
 ```sh
 # within the project directory
 cd skateformer
-python train.py --data_dt 20251209_1738 --dt train
+python train.py --data_dt data/20251209_1738 --dt train
 cd ..
 ```
 
