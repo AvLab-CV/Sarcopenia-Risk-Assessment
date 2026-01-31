@@ -29,9 +29,9 @@ source .venv/bin/activate
 
 This dataset was collected from 124 community-dwelling older adults (aged 65-80 years) recruited from Taipei Medical University Hospital. The study received institutional review board approval (Taipei Medical University, IRB No. N202203197), and written informed consent was obtained from all participants prior to data collection.
 
-**Sarcopenia diagnosis** followed AWGS 2019 consensus criteria, evaluating muscle mass via BIA (InBody270), muscle strength (handgrip), and physical performance (gait speed or SPPB). The cohort comprised 31 sarcopenia patients and 93 normal controls.
+Sarcopenia diagnosis followed AWGS 2019 consensus criteria, evaluating muscle mass via BIA (InBody270), muscle strength (handgrip), and physical performance (gait speed or SPPB). The cohort comprised 31 sarcopenia patients and 93 normal controls.
 
-**Video capture protocol**: Tandem gait videos were recorded using consumer-grade smartphones (Samsung Galaxy S9) mounted on tripods at fixed frontal viewpoints (1920×1080 pixels, 29.91 fps). Participants performed standardized heel-to-toe walking, reducing the base of support to amplify balance deficits. Full-length videos (8-15 seconds) were temporally segmented into 3-second clips and annotated by expert raters as stable or unstable.
+Video capture protocol: Tandem gait videos were recorded using consumer-grade smartphones (Samsung Galaxy S9) mounted on tripods at fixed frontal viewpoints (1920×1080 pixels, 29.91 fps). Participants performed standardized heel-to-toe walking, reducing the base of support to amplify balance deficits. Full-length videos (8-15 seconds) were temporally segmented into 3-second clips and annotated by expert raters as stable or unstable.
 
 ### Privacy Protection
 
